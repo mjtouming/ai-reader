@@ -21,7 +21,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: "uploads/" });
 
 /** ====== 工具：运行 edge-tts 脚本并生成 mp3 ====== */
@@ -30,18 +30,14 @@ function runEdgeTTS({ inputText, voiceKey, outFile }) {
     const scriptPath = path.join(__dirname, "tts_edge.py");
 
     // ✅ Python 路径：mac/linux
-    let pythonPath = path.join(__dirname, ".venv", "bin", "python");
-
-    // ✅ Windows 兼容：如果你是 Windows，把上面那行改成下面这行
-    // let pythonPath = path.join(__dirname, ".venv", "Scripts", "python.exe");
-
-    // 存在性检查（否则很多人以为跑了其实根本没跑）
-    if (!fs.existsSync(scriptPath)) {
-      return reject(new Error("tts_edge.py not found: " + scriptPath));
-    }
-    if (!fs.existsSync(pythonPath)) {
-      return reject(new Error("pythonPath not found: " + pythonPath));
-    }
+    let pythonPath =
+  process.env.PYTHON_PATH ||
+  (fs.existsSync(path.join(__dirname, ".venv", "bin", "python"))
+    ? path.join(__dirname, ".venv", "bin", "python")
+    : "python3");
+    if (pythonPath.includes(path.join(__dirname, ".venv")) && !fs.existsSync(pythonPath)) {
+  return reject(new Error("pythonPath not found: " + pythonPath));
+}
 
     const p = spawn(
       pythonPath,
