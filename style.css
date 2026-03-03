@@ -21,9 +21,7 @@ body{
   margin:0;
   color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display",system-ui,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-  background:
-    radial-gradient(900px 520px at 20% 0%, var(--bg1), transparent 60%),
-    linear-gradient(180deg, var(--bg0), #ffffff 70%);
+  background-color:#f4f6f8;
 }
 
 /* ===== 页面骨架 ===== */
