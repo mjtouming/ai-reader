@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>AI Reader</title>
+  <!-- TEST123 -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div class="app">
+    <div class="wrap">
+
+      <header class="top">
+        <div class="brand">
+          <div class="logo">小马哥</div>
+          <div>
+            <h1 class="title">AI读者</h1>
+            <p class="sub">告别机械声，古文/外语自动翻译</p>
+          </div>
+        </div>
+      </header>
+
+ <!-- 卡片 1：模式 + 朗读者 + 语速 -->
+<section class="card">
+  <div class="grid3">
+    <div class="field modeField">
+      <label for="modeSelect">朗读模式</label>
+      <select id="modeSelect">
+        <option value="original">原文朗读</option>
+        <option value="story">改成故事（更口语，有趣）</option>
+        <option value="translate">翻译为白话/中文</option>
+      </select>
+    </div>
+
+    <div class="field voiceField">
+      <label for="voiceSelect">朗读者</label>
+      <select id="voiceSelect">
+  <option value="young_female" selected>青年女</option>
+  <option value="girl">少女</option>
+  <option value="young_male">青年男</option>
+  <option value="elder_male">中老年男</option>
+</select>
+    </div>
+
+    <div class="field speedField">
+      <label for="speedSelect">语速</label>
+      <select id="speedSelect">
+        <option value="0.8">0.8x</option>
+        <option value="1" selected>1x</option>
+        <option value="1.2">1.2x</option>
+        <option value="1.5">1.5x</option>
+      </select>
+    </div>
+  </div>
+</section>
+
+      <!-- 卡片 2：上传 -->
+      <section class="card">
+        <div class="card-hd">
+          <div class="card-title">上传文件</div>
+          <div class="card-desc">支持 txt / docx / pdf</div>
+        </div>
+
+        <label class="sr-only" for="fileInput">选择文件</label>
+        <input class="file" type="file" id="fileInput" accept=".txt,.docx,.pdf">
+          <div class="hint">
+    提示：大文件建议先测试小段，确认无误再上长文。
+  </div>
+      </section>
+
+      <!-- 卡片 3：链接 -->
+      <section class="card">
+        <div class="card-hd">
+          <div class="card-title">读取网页链接</div>
+          <div class="card-desc">普通网页更稳定，公众号链接常见反爬</div>
+        </div>
+
+        <div class="gridLink">
+          <div class="field">
+            <label for="urlInput">链接</label>
+            <input id="urlInput" type="url" placeholder="https://..." />
+          </div>
+          <button id="fetchUrlBtn" class="btn secondary">读取链接</button>
+        </div>
+      </section>
+
+      <!-- 卡片 4：正文 + 操作 -->
+      <section class="card">
+        <div class="card-hd">
+          <div class="card-title">文本内容</div>
+          <div class="card-desc">粘贴文字，或用上面的上传/链接导入</div>
+        </div>
+
+        <label class="sr-only" for="textInput">正文</label>
+        <textarea id="textInput" placeholder="粘贴文字，或用上面的上传/链接读取…"></textarea>
+
+        <div class="actions">
+          <button id="generateBtn" class="btn primary">生成并播放</button>
+          <button id="playBtn" class="btn">播放</button>
+          <button id="pauseBtn" class="btn">暂停</button>
+        </div>
+
+        <div class="progress">
+          <progress id="progressBar" value="0" max="100"></progress>
+          <div id="progressLabel" class="muted">0/0</div>
+        </div>
+
+        <div id="statusText" class="status info">就绪</div>
+      </section>
+
+      <div class="spacer"></div>
+    </div>
+
+    <!-- 底部播放器 -->
+    <footer class="playerbar">
+      <div class="wrap player-inner">
+        <div class="player-title">播放器</div>
+        <audio id="audioPlayer" controls></audio>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
