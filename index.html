@@ -56,41 +56,10 @@
   </div>
 </section>
 
-      <!-- 卡片 2：上传 -->
-      <section class="card">
-        <div class="card-hd">
-          <div class="card-title">上传文件</div>
-          <div class="card-desc">支持 txt / docx / pdf</div>
-        </div>
-
-        <label class="sr-only" for="fileInput">选择文件</label>
-        <input class="file" type="file" id="fileInput" accept=".txt,.docx,.pdf">
-          <div class="hint">
-    提示：大文件建议先测试小段，确认无误再上长文。
-  </div>
-      </section>
-
-      <!-- 卡片 3：链接 -->
-      <section class="card">
-        <div class="card-hd">
-          <div class="card-title">读取网页链接</div>
-          <div class="card-desc">普通网页更稳定，公众号链接常见反爬</div>
-        </div>
-
-        <div class="gridLink">
-          <div class="field">
-            <label for="urlInput">链接</label>
-            <input id="urlInput" type="url" placeholder="https://..." />
-          </div>
-          <button id="fetchUrlBtn" class="btn secondary">读取链接</button>
-        </div>
-      </section>
-
-      <!-- 卡片 4：正文 + 操作 -->
+<!-- 卡片 4：正文 + 操作 -->
       <section class="card">
         <div class="card-hd">
           <div class="card-title">文本内容</div>
-          <div class="card-desc">粘贴文字，或用上面的上传/链接导入</div>
         </div>
 
         <label class="sr-only" for="textInput">正文</label>
@@ -108,6 +77,35 @@
         </div>
 
         <div id="statusText" class="status info">就绪</div>
+      </section>
+
+      <!-- 卡片 2：上传 -->
+      <section class="card">
+        <div class="card-hd">
+         <div class="card-title">
+            上传文件
+            <span class="inline-hint">提示：大文件建议先测试小段</span>
+         </div>
+       </div>
+
+        <label class="sr-only" for="fileInput">选择文件</label>
+        <input class="file" type="file" id="fileInput" accept=".txt,.docx,.pdf">
+      </section>
+
+      <!-- 卡片 3：链接 -->
+      <section class="card">
+        <div class="card-hd">
+          <div class="card-title">
+            读取网页链接
+            <span class="inline-hint">普通网页更稳定，公众号链接常见反爬</span>
+          </div>
+
+        <div class="gridLink">
+          <div class="field">
+            <input id="urlInput" type="url" placeholder="https://..." />
+          </div>
+          <button id="fetchUrlBtn" class="btn secondary">读取链接</button>
+        </div>
       </section>
 
       <div class="spacer"></div>

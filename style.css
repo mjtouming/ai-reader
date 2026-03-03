@@ -343,3 +343,9 @@ audio{ width: 100%; border-radius: 14px; }
     bottom: 0;
   }
 }
+.inline-hint {
+  font-size: 12px;
+  color: #999;
+  margin-left: 8px;
+  white-space: nowrap;
+}
