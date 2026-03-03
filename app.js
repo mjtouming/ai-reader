@@ -199,7 +199,19 @@ async function playChunk(index, jobId) {
     total
   });
 
+  try {
   await audioPlayer.play();
+} catch (e) {
+  console.log("play() 被浏览器拒绝或异常:", e);
+
+  // 如果实际上已经在播放，就不要报错
+  if (!audioPlayer.paused) {
+    console.log("实际已播放，忽略错误");
+    return;
+  }
+
+  throw e; // 真的失败才抛
+}
 }
 
 // 上传文件（保留你的逻辑，只加：选择文件时打断播放）
