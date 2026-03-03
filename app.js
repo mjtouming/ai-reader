@@ -390,19 +390,38 @@ if (fetchUrlBtn) {
   });
 }
 window.addEventListener("DOMContentLoaded", () => {
-  const textInput = document.getElementById("textInput");
-  const generateBtn = document.getElementById("generateBtn");
+  const hasVisited = localStorage.getItem("ai_reader_visited");
 
-  const defaultText = `
+  if (!hasVisited) {
+    // ===== 第一次进入 =====
+
+    const defaultText = `
 臣亮言：先帝创业未半而中道崩殂。今天下三分，益州疲弊，此诚危急存亡之秋也。
 然侍卫之臣不懈于内，忠志之士忘身于外者，盖追先帝之殊遇，欲报之于陛下也。
 诚宜开张圣听，以光先帝遗德，恢弘志士之气，不宜妄自菲薄，引喻失义，以塞忠谏之路也。
 `;
 
-  if (!textInput.value.trim()) {
     textInput.value = defaultText.trim();
-    setTimeout(() => {
-      generateBtn.click();
-    }, 500);
+
+    // 默认故事模式 + 老年男
+    modeSelect.value = "story";
+    voiceSelect.value = "elder_male";
+
+    setTimeout(async () => {
+      try {
+        await generateBtn.click();
+        setStatus("已生成，点击播放 ▶️", "ok");
+      } catch (e) {
+        console.log("首次自动生成失败:", e);
+      }
+    }, 800);
+
+    localStorage.setItem("ai_reader_visited", "1");
+
+  } else {
+    // ===== 第二次及以后 =====
+
+    modeSelect.value = "original";
+    voiceSelect.value = "young_female";
   }
 });
