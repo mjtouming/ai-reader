@@ -226,7 +226,7 @@ fileInput?.addEventListener("change", async function () {
     setStatus("正在解析 PDF...", "info", { busy: true });
 
     try {
-      const response = await fetch("http://127.0.0.1:3000/upload-pdf", {
+      const response = await fetch("/upload-pdf", {
         method: "POST",
         body: formData
       });
@@ -249,7 +249,7 @@ fileInput?.addEventListener("change", async function () {
     setStatus("正在解析 Word...", "info", { busy: true });
 
     try {
-      const response = await fetch("http://127.0.0.1:3000/upload-word", {
+      const response = await fetch("/upload-word", {
         method: "POST",
         body: formData
       });
@@ -373,7 +373,7 @@ if (fetchUrlBtn) {
     setStatus("正在抓取网页内容...", "info", { busy: true });
 
     try {
-      const response = await fetch("http://127.0.0.1:3000/fetch-url", {
+      const response = await fetch("/fetch-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url })

@@ -1,9 +1,7 @@
 export function saveProgress(time) {
-    localStorage.setItem("audioProgress", time);
+  localStorage.setItem("audioProgress", time);
 }
 
 export function loadProgress() {
-    return localStorage.getItem("audioProgress");
+  return localStorage.getItem("audioProgress");
 }
-
-

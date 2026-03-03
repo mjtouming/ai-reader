@@ -1,5 +1,5 @@
 export async function generateAudioFromText(text, mode, voice, signal) {
-  const response = await fetch("http://127.0.0.1:3000/tts", {
+  const response = await fetch("/tts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, mode, voice }),
