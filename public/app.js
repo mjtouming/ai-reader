@@ -25,6 +25,38 @@ let isAutoPlaying = false;
 let currentAbort = null;     // AbortController
 let currentJobId = 0;        // 每次点击生成+1，旧任务结果全部作废
 let currentAudioUrl = null;  // 释放 objectURL，避免内存泄漏
+let nextAudioUrl = null;
+let nextAbort = null;
+let nextNextAudioUrl = null;
+const SESSION_KEY = "ai_reader_session_v1";
+
+function saveSession(patch = {}) {
+  try {
+    const prev = loadSession() || {};
+    const data = {
+      text: textInput?.value || "",
+      chunks,
+      currentIndex,
+      currentTime: audioPlayer?.currentTime || 0,
+      mode: modeSelect?.value || "original",
+      voice: voiceSelect?.value || "young_female",
+      speed: speedSelect?.value || "1",
+      ...prev,
+      ...patch,
+      updatedAt: Date.now()
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 function setStatus(text, type = "info", opts = {}) {
   if (!statusText) return;
@@ -138,6 +170,24 @@ function interruptPlayback(reason = "") {
     currentAbort = null;
   }
 
+  // ✅ 清理预生成中的请求
+if (nextAbort) {
+  try { nextAbort.abort(); } catch {}
+  nextAbort = null;
+}
+
+// ✅ 释放预生成的音频URL（nextAudioUrl）
+if (nextAudioUrl) {
+  try { URL.revokeObjectURL(nextAudioUrl); } catch {}
+}
+nextAudioUrl = null;
+
+// ✅ 如果你有 nextNextAudioUrl（第二个预生成缓存），也要清理
+if (typeof nextNextAudioUrl !== "undefined" && nextNextAudioUrl) {
+  try { URL.revokeObjectURL(nextNextAudioUrl); } catch {}
+}
+nextNextAudioUrl = null;
+
   // 停止 audio
   if (audioPlayer) {
     audioPlayer.pause();
@@ -173,11 +223,13 @@ async function playChunk(index, jobId) {
 
   // ✅ 关键：把 signal 传进去（需要配合 audioEngine.js 的小改动，见后面）
   const audioUrl = await generateAudioFromText(
-    chunks[index],
-    mode,
-    voice,
-    abort.signal
-  );
+  chunks[index],
+  mode,
+  voice,
+  abort.signal
+);
+
+
 
   // 如果点击了新一轮“生成并播放”，旧结果直接丢弃
   if (jobId !== currentJobId) return;
@@ -200,7 +252,9 @@ async function playChunk(index, jobId) {
   });
 
   try {
+  preGenerateNext(index + 1, jobId);
   await audioPlayer.play();
+
 } catch (e) {
   console.log("play() 被浏览器拒绝或异常:", e);
 
@@ -212,6 +266,50 @@ async function playChunk(index, jobId) {
 
   throw e; // 真的失败才抛
 }
+}
+
+async function preGenerateNext(index, jobId) {
+
+  if (index >= chunks.length) return;
+
+  const mode = modeSelect?.value || "original";
+  const voice = voiceSelect?.value || "young_female";
+
+  const abort = new AbortController();
+  nextAbort = abort;
+
+  try {
+
+    const url = await generateAudioFromText(
+      chunks[index],
+      mode,
+      voice,
+      abort.signal
+    );
+
+    if (jobId !== currentJobId) return;
+
+    if (!nextAudioUrl) {
+      nextAudioUrl = url;
+      preGenerateNext(index + 1, jobId);
+      return;
+    }
+
+    if (!nextNextAudioUrl) {
+  nextNextAudioUrl = url;
+
+  setTimeout(() => {
+    preGenerateNext(index + 1, jobId);
+  }, 100);
+
+  return;
+}
+
+  } catch (e) {
+
+    if (e?.name === "AbortError") return;
+
+  }
 }
 
 // 上传文件（保留你的逻辑，只加：选择文件时打断播放）
@@ -294,7 +392,20 @@ generateBtn?.addEventListener("click", async function () {
   currentJobId += 1;
   const jobId = currentJobId;
 
-  chunks = splitTextIntoChunks(text, { maxLen: 2200, minLen: 800 });
+  // ✅ 加速启动：第一段切小（更快改写+更快出第一段音频）
+//    后续仍然用大段，保证整体效率
+const firstParts = splitTextIntoChunks(text, { maxLen: 420, minLen: 200 });
+
+if (firstParts.length > 1) {
+  const first = firstParts.shift(); // 第一段（短）
+  const restText = firstParts.join("\n\n"); // 剩余文本重新拼回去
+
+  const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
+
+  chunks = [first, ...restParts];
+} else {
+  chunks = firstParts;
+}
   currentIndex = 0;
   isAutoPlaying = true;
 
@@ -326,14 +437,56 @@ pauseBtn?.addEventListener("click", function () {
 });
 
 // 自动保存播放进度（保持）
+let lastSessionSave = 0;
+
 audioPlayer?.addEventListener("timeupdate", function () {
+
   saveProgress(audioPlayer.currentTime);
+
+  const now = Date.now();
+  if (now - lastSessionSave > 2000) {
+    saveSession();
+    lastSessionSave = now;
+  }
+
 });
 
 // 页面加载时恢复播放进度（保持）
 window.addEventListener("load", function () {
-  const savedTime = loadProgress();
-  if (savedTime) audioPlayer.currentTime = savedTime;
+
+  const session = loadSession();
+  if (!session) return;
+
+  try {
+
+    textInput.value = session.text || "";
+
+    chunks = session.chunks || [];
+    currentIndex = session.currentIndex || 0;
+
+    modeSelect.value = session.mode || "original";
+    voiceSelect.value = session.voice || "young_female";
+    speedSelect.value = session.speed || "1";
+
+    if (session.currentTime != null) {
+  audioPlayer.currentTime = session.currentTime;
+}
+
+    if (chunks.length > 0) {
+      setStatus(
+        `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
+        "ok",
+        {
+          step: currentIndex,
+          total: chunks.length
+        }
+      );
+    }
+
+  } catch (e) {
+    console.log("恢复 session 失败", e);
+  }
+
 });
 
 // ✅ 语速：立刻生效（保持）
@@ -346,6 +499,34 @@ audioPlayer?.addEventListener("ended", async function () {
   if (!isAutoPlaying) return;
 
   currentIndex += 1;
+
+  saveSession({
+    currentIndex
+  });
+
+  if (nextAudioUrl) {
+
+  const url = nextAudioUrl;
+
+  nextAudioUrl = nextNextAudioUrl;
+  nextNextAudioUrl = null;
+
+  currentAudioUrl = url;
+
+  audioPlayer.src = url;
+  audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
+  setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
+  busy: true,
+  step: currentIndex + 1,
+  total: chunks.length
+});
+
+  await audioPlayer.play();
+
+  preGenerateNext(currentIndex + 2, currentJobId);
+
+  return;
+}
   if (currentIndex >= chunks.length) {
     setStatus("全部播放完成 ✅", "ok", {
       busy: false,

@@ -124,7 +124,7 @@ input, select, textarea{
 }
 
 textarea{
-  min-height: 190px;
+  min-height: 80px;
   resize: vertical;
   line-height: 1.55;
 }
@@ -346,4 +346,29 @@ audio{ width: 100%; border-radius: 14px; }
   color: #999;
   margin-left: 8px;
   white-space: nowrap;
+}
+
+.progress-info{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-top:6px;
+}
+
+.status{
+  margin-top:0;
+  padding:4px 10px;
+  font-size:13px;
+}
+.progress-info{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-top:6px;
+}
+
+.status{
+  margin-top:0;
+  padding:4px 10px;
+  font-size:13px;
 }

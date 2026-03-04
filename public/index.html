@@ -71,12 +71,14 @@
           <button id="pauseBtn" class="btn">暂停</button>
         </div>
 
-        <div class="progress">
-          <progress id="progressBar" value="0" max="100"></progress>
-          <div id="progressLabel" class="muted">0/0</div>
-        </div>
+       <div class="progress">
+  <progress id="progressBar" value="0" max="100"></progress>
 
-        <div id="statusText" class="status info">就绪</div>
+  <div class="progress-info">
+    <div id="progressLabel" class="muted">0/0</div>
+    <div id="statusText" class="status info">就绪</div>
+  </div>
+</div>
       </section>
 
       <!-- 卡片 2：上传 -->
@@ -92,24 +94,7 @@
         <input class="file" type="file" id="fileInput" accept=".txt,.docx,.pdf">
       </section>
 
-      <!-- 卡片 3：链接 -->
-      <section class="card">
-        <div class="card-hd">
-          <div class="card-title">
-            读取网页链接
-            <span class="inline-hint">普通网页更稳定，公众号链接常见反爬</span>
-          </div>
-
-        <div class="gridLink">
-          <div class="field">
-            <input id="urlInput" type="url" placeholder="https://..." />
-          </div>
-          <button id="fetchUrlBtn" class="btn secondary">读取链接</button>
-        </div>
-      </section>
-
       <div class="spacer"></div>
-    </div>
 
     <!-- 底部播放器 -->
     <footer class="playerbar">

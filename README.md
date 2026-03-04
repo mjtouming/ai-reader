@@ -1,431 +1,417 @@
-README.md
-# AI Reader
-
-AI Reader 是一个 **网页 AI 朗读工具**，可以把文本内容转换成语音播放，方便在通勤、散步、做家务等场景下听文章。
-
-用户可以输入文本、上传文件或读取网页内容，然后通过 AI 改写与语音合成，将内容转换为可连续播放的音频。
-
-项目当前是一个 **轻量级 Web 应用（Node + Edge TTS）**，重点在于实现：
-
-- AI理解文本
-- AI改写为适合朗读的内容
-- 高质量语音播放
 
 ---
 
-# 功能 Features
+# AI-Reader 项目 README（开发状态说明）
 
-目前 AI Reader 支持以下功能：
+## 一、项目概述
 
-### 1 文本朗读
-用户可以直接输入文本进行朗读。
+AI-Reader 是一个 **AI 文章朗读播放器**，支持：
 
-支持三种模式：
+* 文本 / PDF / Word / URL 导入
+* AI 改写（OpenAI API）
+* TTS 语音生成（Edge TTS）
+* 自动分段朗读
+* 后台预生成音频
+* 本地缓存音频
+* 播放进度恢复
 
-**原文朗读**
+目标是做成一个 **AI 有声书播放器**，而不是简单的 TTS 工具。
 
+---
 
-文本 → Edge TTS
+# 二、当前技术架构
 
+整体流程：
 
-**故事模式**
-
-
-文本
+```
+文本输入
 ↓
-OpenAI 改写为更口语化内容
+文本分段（chunk）
 ↓
-Edge TTS
-
-
-**翻译模式**
-
-
-文本
+OpenAI API 改写文本
 ↓
-OpenAI 翻译 / 白话
+Edge-TTS 生成语音
 ↓
-Edge TTS
-
-
----
-
-### 2 文件上传
-
-支持上传以下文件：
-
-- TXT
-- PDF
-- DOCX
-
-服务器会解析文件内容并转换为文本进行朗读。
-
-接口：
-
-
-/upload-pdf
-/upload-word
-
-
----
-
-### 3 网页内容朗读
-
-用户可以输入网页链接：
-
-
-/fetch-url
-
-
-服务器抓取网页正文并转换为可朗读文本。
-
----
-
-### 4 自动分段朗读
-
-长文本会自动分段：
-
-
-splitTextIntoChunks()
-
-
-避免 TTS 长文本限制，同时支持连续播放。
-
----
-
-### 5 自动连续播放
-
-播放流程：
-
-
-生成第一段音频
+前端 Audio 播放
 ↓
-播放
+后台预生成下一段
+```
+
+---
+
+# 三、核心播放逻辑
+
+当前播放器实现 **流式播放 pipeline**：
+
+```
+播放 chunk N
 ↓
-audio ended
+后台生成 chunk N+1
 ↓
-生成下一段
-↓
-继续播放
+后台生成 chunk N+2
+```
 
+实现方式：
 
-实现类似 **有声书 / 播客** 的连续播放体验。
+```
+currentAudioUrl
+nextAudioUrl
+nextNextAudioUrl
+```
 
----
+形成 **双缓冲播放结构**：
 
-### 6 任务中断机制
-
-如果用户在播放过程中点击 **生成并播放**：
-
-
-AbortController
-
-
-会立即终止旧任务，避免任务堆积。
-
----
-
-### 7 播放控制
-
-支持：
-
-- 播放
-- 暂停
-- 调整语速
+```
+当前播放
+下一段缓存
+下下段缓存
+```
 
 ---
 
-### 8 播放进度记忆
+# 四、启动速度优化（已实现）
 
-使用：
+为了减少启动等待时间：
 
+原始逻辑：
 
-localStorage
+```
+chunk ≈ 2000字
+LLM 改写
+≈ 30秒
+```
 
+现在优化为：
 
-保存：
+```
+第一段 ≈ 400字
+后续段 ≈ 2000字
+```
 
+实现方式：
 
-audio currentTime
+```
+firstParts = splitTextIntoChunks(maxLen:400)
+restParts  = splitTextIntoChunks(maxLen:2200)
+chunks = [first, ...rest]
+```
 
+效果：
 
-刷新页面可以恢复播放位置。
-
----
-
-# 首页默认体验
-
-为了优化新用户体验，首页设置了特殊逻辑。
-
-### 第一次访问
-
-自动：
-
-- 填充《出师表》
-- 默认 **故事模式**
-- 默认 **老年男声**
-- 自动开始朗读
-
-通过：
-
-
-localStorage ai_reader_visited
-
-
-判断是否第一次访问。
+```
+启动等待
+50秒 → 10-20秒
+```
 
 ---
 
-### 再次访问
+# 五、缓存系统
 
-默认：
+使用 **IndexedDB** 缓存生成音频。
 
-- 不自动填充文本
-- 不自动播放
-- 默认 **原文朗读**
-- 默认 **青年女声**
+缓存 key：
 
----
+```
+hash(text + mode + voice)
+```
 
-# 技术架构
+缓存内容：
 
-前端：
-
-
-HTML
-CSS
-Vanilla JavaScript
-
-
-后端：
-
-
-Node.js
-Express
-
-
-部署：
-
-
-Railway
-
-
-AI能力：
-
-
-OpenAI API
-
-
-语音合成：
-
-
-Microsoft Edge TTS
-
-
----
-
-# 项目结构
-
-
-ai-reader/
-│
-├── index.html
-├── app.js
-├── audioEngine.js
-├── storage.js
-├── style.css
-│
-├── server.js
-├── tts_edge.py
-│
-├── uploads/
-├── tts_cache/
-│
-├── package.json
-└── README.md
-
-
----
-
-# 主要文件说明
-
-### index.html
-
-页面结构与 UI。
-
----
-
-### app.js
-
-前端核心逻辑：
-
-- 文本分段
-- 自动播放控制
-- AbortController 中断
-- 播放队列
-
----
-
-### audioEngine.js
-
-负责：
-
-
-调用后端 TTS
-生成音频
-返回 audio URL
-
-
----
-
-### storage.js
-
-负责：
-
-
-localStorage
-保存播放进度
-
-
----
-
-### server.js
-
-Node 后端服务：
-
-- OpenAI API 调用
-- TTS 调用
-- 文件上传解析
-- 网页抓取
-
----
-
-### tts_edge.py
-
-使用：
-
-
-edge-tts
-
-
-生成 MP3 音频。
-
----
-
-# 本地运行
-
-安装依赖：
-
-
-npm install
-
-
-启动服务器：
-
-
-node server.js
-
-
-或
-
-
-nodemon server.js
-
-
-服务器默认运行：
-
-
-http://localhost:3000
-
-
----
-
-# 环境变量
-
-需要在 `.env` 中配置：
-
-
-OPENAI_API_KEY=your_api_key
-
-
----
-
-# 部署
-
-当前部署平台：
-
-
-Railway
-
+```
+audioBlob
+```
 
 流程：
 
-
-GitHub push
+```
+生成前
 ↓
-Railway 自动构建
+检查缓存
 ↓
-部署 Node 服务
-
+命中 → 直接播放
+↓
+未命中 → 请求 TTS
+```
 
 ---
 
-# 当前项目阶段
+# 六、任务中断机制
 
-项目当前处于：
+播放器支持 **随时打断生成和播放**。
 
+实现：
 
-MVP 完成
-功能基本稳定
+```
+AbortController
+currentJobId
+interruptPlayback()
+```
 
+逻辑：
 
-当前重点优化：
+```
+点击生成
+↓
+currentJobId++
+↓
+旧任务结果作废
+```
 
-- 朗读体验
-- AI 改写质量
-- 语音自然度
+保证：
+
+```
+旧音频不会污染新播放
+```
 
 ---
 
-# 未来优化方向
+# 七、播放器状态管理
 
-可能升级：
+关键变量：
 
-### 更好的 TTS
+```
+chunks
+currentIndex
+isAutoPlaying
+currentAbort
+currentAudioUrl
+nextAudioUrl
+nextNextAudioUrl
+```
 
-候选：
+播放流程：
 
-
-Google TTS
-ElevenLabs
-
+```
+playChunk(index)
+↓
+audioPlayer.play()
+↓
+ended → next chunk
+```
 
 ---
 
-### AI播客模式
+# 八、Session 恢复
 
-未来可能增加：
+使用 localStorage 保存：
 
+```
+text
+chunks
+currentIndex
+currentTime
+mode
+voice
+speed
+```
 
-文本理解
-AI改写
-播客式朗读
+刷新页面后可以恢复：
 
+```
+播放进度
+当前段落
+语速
+语音
+```
 
 ---
 
-# 项目目标
+# 九、文件导入支持
 
-AI Reader 的目标不是简单朗读文本，而是实现：
+支持：
 
+```
+TXT
+PDF
+DOCX
+URL抓取
+```
 
-文本
+流程：
+
+```
+上传文件
 ↓
-AI理解
+后端解析
 ↓
-AI改写
+返回文本
 ↓
-自然语音播放
+填入 textInput
+```
 
+---
 
-让任何文章都可以 **像播客一样被听到**。
+# 十、TTS 实现
+
+TTS 使用：
+
+```
+edge-tts (Python)
+```
+
+调用流程：
+
+```
+Node server
+↓
+spawn python
+↓
+edge-tts
+↓
+生成 mp3
+↓
+返回前端
+```
+
+生成文件存储：
+
+```
+tts_cache/
+```
+
+---
+
+# 十一、当前已实现功能
+
+AI-Reader 已实现：
+
+✔ 文本分段
+✔ OpenAI 改写
+✔ Edge-TTS 语音生成
+✔ 自动播放
+✔ 后台预生成
+✔ 音频缓存（IndexedDB）
+✔ 任务中断
+✔ 播放进度恢复
+✔ PDF / Word 解析
+✔ URL 内容抓取
+
+---
+
+# 十二、当前已知限制
+
+1️⃣ 启动仍需要等待第一段改写完成
+2️⃣ OpenAI 改写速度较慢
+3️⃣ UI 仍较简单
+4️⃣ 没有跳段播放
+5️⃣ 没有显示缓存进度
+
+---
+
+# 十三、下一阶段优化计划
+
+优先级排序：
+
+### P1 启动速度优化
+
+* Streaming LLM
+* 分句 TTS
+* 几秒内开始播放
+
+---
+
+### P2 缓存改写文本
+
+缓存：
+
+```
+rewrite_text
+```
+
+避免重复调用 OpenAI。
+
+---
+
+### P3 播放器 UI 升级
+
+显示：
+
+```
+播放 3 / 60
+缓存 8 段
+```
+
+---
+
+### P4 跳段播放
+
+支持：
+
+```
+点击段落
+立即播放
+```
+
+---
+
+### P5 MediaSession
+
+支持：
+
+```
+锁屏控制
+上一段 / 下一段
+```
+
+---
+
+# 十四、当前项目状态
+
+当前 AI-Reader 已达到：
+
+```
+功能完成度 ≈ 80%
+```
+
+核心架构稳定。
+
+剩余工作主要是：
+
+```
+性能优化
+UI优化
+播放器体验
+```
+
+---
+
+# 十五、开发环境
+
+Node.js
+
+主要依赖：
+
+```
+express
+edge-tts (python)
+pdf parser
+docx parser
+```
+
+运行：
+
+```
+nodemon server.js
+```
+
+访问：
+
+```
+http://localhost:3000
+```
+
+---
+
+# 十六、作者说明
+
+该项目由开发者与 AI 协作开发。
+
+目标是构建一个：
+
+```
+AI 有声书播放器
+```
+
+而不仅是一个简单的 TTS 工具。
+
+---
