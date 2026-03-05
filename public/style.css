@@ -200,9 +200,11 @@ input.file{
 /* ===== 按钮 ===== */
 .actions{
   display:flex;
-  gap: 10px;
-  margin-top: 12px;
-  flex-wrap: wrap;
+  gap:12px;
+  margin-top:12px;
+  align-items:center;
+  flex-wrap:nowrap;
+  width:100%;
 }
 
 .btn{
@@ -355,20 +357,13 @@ audio{ width: 100%; border-radius: 14px; }
   margin-top:6px;
 }
 
-.status{
-  margin-top:0;
-  padding:4px 10px;
-  font-size:13px;
-}
-.progress-info{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  margin-top:6px;
+
+#sleepTimer{
+  width:140px;
+  flex:0 0 140px;
+  max-width:140px;
 }
 
-.status{
-  margin-top:0;
-  padding:4px 10px;
-  font-size:13px;
+.actions .btn{
+  white-space: nowrap;        /* ✅ 防止按钮文字换行 */
 }

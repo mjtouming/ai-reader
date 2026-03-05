@@ -67,8 +67,15 @@
 
         <div class="actions">
           <button id="generateBtn" class="btn primary">生成并播放</button>
-          <button id="playBtn" class="btn">播放</button>
-          <button id="pauseBtn" class="btn">暂停</button>
+          <button id="playPauseBtn" class="secondary-btn">▶️ 播放</button>
+
+        <select id="sleepTimer">
+          <option value="0">定时关闭</option>
+          <option value="900">15分钟</option>
+          <option value="1800">30分钟</option>
+          <option value="3600">60分钟</option>
+          <option value="end">本段播放完</option>
+        </select>
         </div>
 
        <div class="progress">

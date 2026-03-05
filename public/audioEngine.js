@@ -69,7 +69,9 @@ function createCacheKey(text, mode, voice) {
   return "audio_" + Math.abs(hash);
 
 }
-export async function generateAudioFromText(text, mode, voice, signal) {
+
+// ===== 生成音频 =====
+export async function generateAudioFromText(text, mode, voice, signal, previous) {
 
   const key = createCacheKey(text, mode, voice);
 
@@ -81,23 +83,57 @@ export async function generateAudioFromText(text, mode, voice, signal) {
     return URL.createObjectURL(cached);
   }
 
-  // ===== 没缓存才请求 TTS =====
-  const response = await fetch("/tts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, mode, voice }),
-    signal
-  });
+  // ===== 自动 retry =====
+  let lastError = null;
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(errText);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+
+    try {
+
+      const response = await fetch("/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          mode,
+          voice,
+          previous
+        }),
+        signal
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText);
+      }
+
+      const audioBlob = await response.blob();
+
+      // ===== 写入缓存 =====
+      await saveCachedAudio(key, audioBlob);
+
+      return URL.createObjectURL(audioBlob);
+
+    } catch (err) {
+
+      lastError = err;
+
+      // Abort 不 retry
+      if (err?.name === "AbortError") {
+        throw err;
+      }
+
+      console.log("TTS 请求失败，准备重试:", attempt);
+
+      // 等待 1 秒再 retry
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+    }
+
   }
 
-  const audioBlob = await response.blob();
+  throw lastError;
 
-  // ===== 写入缓存 =====
-  await saveCachedAudio(key, audioBlob);
-
-  return URL.createObjectURL(audioBlob);
 }

@@ -3,23 +3,35 @@ import { saveProgress, loadProgress } from './storage.js';
 
 const textInput = document.getElementById("textInput");
 const generateBtn = document.getElementById("generateBtn");
-const playBtn = document.getElementById("playBtn");
-const pauseBtn = document.getElementById("pauseBtn");
 const audioPlayer = document.getElementById("audioPlayer");
 const fileInput = document.getElementById("fileInput");
 const modeSelect = document.getElementById("modeSelect");
 const statusText = document.getElementById("statusText");
 const speedSelect = document.getElementById("speedSelect");
 const voiceSelect = document.getElementById("voiceSelect");
+modeSelect.addEventListener("change", () => {
+
+  if (modeSelect.value === "original") {
+    voiceSelect.value = "young_female";
+  }
+
+  if (modeSelect.value === "story") {
+    voiceSelect.value = "elder_male";
+  }
+
+});
 const urlInput = document.getElementById("urlInput");
 const fetchUrlBtn = document.getElementById("fetchUrlBtn");
 
 const progressBar = document.getElementById("progressBar");
 const progressLabel = document.getElementById("progressLabel");
+const sleepTimer = document.getElementById("sleepTimer");
 
 let chunks = [];
 let currentIndex = 0;
 let isAutoPlaying = false;
+let sleepTimerId = null;
+let sleepMode = null;
 
 /** ✅ 新增：用于“可中断生成”的控制 */
 let currentAbort = null;     // AbortController
@@ -226,7 +238,8 @@ async function playChunk(index, jobId) {
   chunks[index],
   mode,
   voice,
-  abort.signal
+  abort.signal,
+  chunks[index - 1] || null
 );
 
 
@@ -252,8 +265,9 @@ async function playChunk(index, jobId) {
   });
 
   try {
-  preGenerateNext(index + 1, jobId);
-  await audioPlayer.play();
+   preGenerateNext(index + 1, jobId);
+   await audioPlayer.play();
+   
 
 } catch (e) {
   console.log("play() 被浏览器拒绝或异常:", e);
@@ -284,26 +298,36 @@ async function preGenerateNext(index, jobId) {
       chunks[index],
       mode,
       voice,
-      abort.signal
+      abort.signal,
+      chunks[index - 1] || null
     );
 
+    // 如果已经开启了新任务，旧任务结果直接丢弃
     if (jobId !== currentJobId) return;
 
     if (!nextAudioUrl) {
+
+      if (jobId !== currentJobId) return;
+
       nextAudioUrl = url;
+
       preGenerateNext(index + 1, jobId);
+
       return;
     }
 
     if (!nextNextAudioUrl) {
-  nextNextAudioUrl = url;
 
-  setTimeout(() => {
-    preGenerateNext(index + 1, jobId);
-  }, 100);
+      if (jobId !== currentJobId) return;
 
-  return;
-}
+      nextNextAudioUrl = url;
+
+      setTimeout(() => {
+        preGenerateNext(index + 1, jobId);
+      }, 100);
+
+      return;
+    }
 
   } catch (e) {
 
@@ -429,11 +453,22 @@ if (firstParts.length > 1) {
 });
 
 // 播放/暂停（保持）
-playBtn?.addEventListener("click", function () {
-  audioPlayer.play();
-});
-pauseBtn?.addEventListener("click", function () {
-  audioPlayer.pause();
+const playPauseBtn = document.getElementById("playPauseBtn");
+
+playPauseBtn?.addEventListener("click", function () {
+
+  if (audioPlayer.paused) {
+
+    audioPlayer.play();
+    playPauseBtn.innerText = "⏸ 暂停";
+
+  } else {
+
+    audioPlayer.pause();
+    playPauseBtn.innerText = "▶️ 播放";
+
+  }
+
 });
 
 // 自动保存播放进度（保持）
@@ -449,6 +484,13 @@ audioPlayer?.addEventListener("timeupdate", function () {
     lastSessionSave = now;
   }
 
+});
+audioPlayer?.addEventListener("play", () => {
+  if (playPauseBtn) playPauseBtn.innerText = "⏸ 暂停";
+});
+
+audioPlayer?.addEventListener("pause", () => {
+  if (playPauseBtn) playPauseBtn.innerText = "▶️ 播放";
 });
 
 // 页面加载时恢复播放进度（保持）
@@ -496,6 +538,13 @@ speedSelect?.addEventListener("change", function () {
 
 // ✅ 自动播放下一段：带 jobId 防止串线
 audioPlayer?.addEventListener("ended", async function () {
+
+  if (sleepMode === "end") {
+  interruptPlayback("定时关闭（本段结束）");
+  sleepMode = null;
+  return;
+}
+
   if (!isAutoPlaying) return;
 
   currentIndex += 1;
@@ -507,6 +556,10 @@ audioPlayer?.addEventListener("ended", async function () {
   if (nextAudioUrl) {
 
   const url = nextAudioUrl;
+
+  if (currentAudioUrl) {
+  try { URL.revokeObjectURL(currentAudioUrl); } catch {}
+  }
 
   nextAudioUrl = nextNextAudioUrl;
   nextNextAudioUrl = null;
@@ -523,7 +576,8 @@ audioPlayer?.addEventListener("ended", async function () {
 
   await audioPlayer.play();
 
-  preGenerateNext(currentIndex + 2, currentJobId);
+  const startIdx = nextAudioUrl ? (currentIndex + 2) : (currentIndex + 1);
+  preGenerateNext(startIdx, currentJobId);
 
   return;
 }
@@ -617,4 +671,38 @@ window.addEventListener("DOMContentLoaded", () => {
     modeSelect.value = "original";
     voiceSelect.value = "young_female";
   }
+});
+
+sleepTimer?.addEventListener("change", function () {
+
+  const value = sleepTimer.value;
+
+  if (sleepTimerId) {
+    clearTimeout(sleepTimerId);
+    sleepTimerId = null;
+  }
+
+  sleepMode = null;
+
+  if (value === "0") {
+    setStatus("定时关闭已取消", "info");
+    return;
+  }
+
+  if (value === "end") {
+    sleepMode = "end";
+    setStatus("将在本段播放完后关闭", "info");
+    return;
+  }
+
+  const seconds = parseInt(value);
+
+  sleepTimerId = setTimeout(() => {
+
+    interruptPlayback("定时关闭");
+
+  }, seconds * 1000);
+
+  setStatus(`已设置 ${seconds / 60} 分钟后关闭`, "info");
+
 });

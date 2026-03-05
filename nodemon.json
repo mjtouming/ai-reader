@@ -1,7 +1,11 @@
 {
+  "watch": ["server.js"],
   "ignore": [
     "rewrite_cache.json",
-    "tts_cache/*",
-    "uploads/*"
-  ]
+    "tts_cache",
+    "uploads",
+    "node_modules",
+    ".git"
+  ],
+  "ext": "js,json"
 }
