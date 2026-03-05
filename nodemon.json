@@ -1,0 +1,7 @@
+{
+  "ignore": [
+    "rewrite_cache.json",
+    "tts_cache/*",
+    "uploads/*"
+  ]
+}
