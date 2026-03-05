@@ -1,391 +1,56 @@
-AI-Reader 项目 AI_CONTEXT v3
-开发阶段说明（非常重要）
+AI-Reader 项目 AI_CONTEXT v5（稳定开发版）
 
-当前项目已经进入：
-
-优化阶段
-
-不是：
-
-架构开发阶段
-
-因此 AI 协作必须遵守以下规则：
-
-禁止重写系统架构
-禁止重写播放器逻辑
-禁止大规模代码改动
+一、开发阶段说明（非常重要）
+当前项目阶段：优化阶段（不是架构开发阶段）
+因此 AI 协作必须遵守：
+禁止事项：
+- 禁止重写系统架构
+- 禁止重写播放器核心 pipeline
+- 禁止修改分段算法
+- 禁止重写缓存机制
+- 禁止进行大规模代码重构
 
 AI 修改代码时必须：
+- 一步一步修改
+- 只修改必要代码
+- 保持当前架构
+- 提供“完整可替换代码”（不允许只给片段）
+- 不允许提出多个方案（默认给一个最稳妥方案）
+- 用户是初学者：必须给可直接复制替换的一体化代码
 
-一步一步修改
+二、产品定位（最重要）
+AI-Reader 是：AI 有声书播放器
+不是：简单 TTS 朗读工具
+目标：把普通文章转换为“接近有声书体验”的连续播放。
 
-只修改必要代码
+三、朗读角色（Role-based Reading）
+对外概念：朗读角色（Role）
+当前支持两个角色：
+1) 播音员（Announcer）
+- 特点：忠于原文、不评论、不加戏、语气克制、朗读更“干净”
+- 默认声线：young_female
+2) 说书人（Storyteller）
+- 特点：忠于主线、允许适度点评/调侃、更像“讲”而不是“念”
+- 默认声线：elder_male
 
-保持当前架构
+内部实现说明：
+- 前端 modeSelect 目前使用：original / story / translate（以及可扩展 announcer）
+- 服务端根据 mode 选择不同 prompt（ANNOUNCER / STORYTELLER / TRANSLATE）
+- 目前阶段：对外统一叫“角色”，内部继续沿用 mode，避免大改动
 
-提供可直接替换代码
+四、翻译规则
+如果输入文本为：古文 / 英文 / 日文 / 其他外文
+必须先：翻译成现代中文
+再进入：AI 改写 → TTS
+当前阶段：可以先不做自动识别（产品规则先确定）。
 
-不增加复杂设计
-
-目标：
-
-在稳定架构上逐步优化。
-
-项目目标
-
-AI-Reader 是一个 AI文章朗读播放器。
-
-目标：
-
-将普通文章转换为 接近有声书体验的连续播放。
-
-用户流程：
-
-输入文本 / PDF / Word / URL
-↓
-AI 改写文本
-↓
-TTS 生成语音
-↓
-自动分段播放
-↓
-后台预生成下一段
-
-最终目标：
-
-AI 有声书播放器
-
-而不是简单 TTS。
-
-系统架构图
+五、系统架构（保持不变）
 Browser (Frontend)
 │
 ├─ public/app.js
-│   │
-│   ├─ 文本分段
-│   │   splitTextIntoChunks()
-│   │
-│   ├─ 播放器控制
-│   │
-│   ├─ pipeline 预生成
-│   │
-│   └─ 调用 audioEngine.js
-│
-├─ public/audioEngine.js
-│   │
-│   ├─ IndexedDB 音频缓存
-│   │
-│   └─ POST /tts
-│
-▼
-Node Server (server.js)
-│
-├─ OpenAI API
-│   │
-│   ├─ 文本改写
-│   └─ rewrite_cache.json
-│
-└─ Edge TTS
-    │
-    └─ tts_edge.py
-         │
-         └─ 生成 mp3
-Pipeline 工作流程
-
-播放器采用 预生成 Pipeline。
-
-运行流程：
-
-生成 chunk 1
-↓
-播放 chunk 1
-↓
-后台生成 chunk 2
-↓
-后台生成 chunk 3
-↓
-播放 chunk 2
-↓
-后台生成 chunk 4
-↓
-播放 chunk 3
-
-目标：
-
-保证播放器始终有 音频缓冲区。
-
-播放器缓存结构
-
-播放器维护三个核心变量：
-
-currentAudioUrl
-nextAudioUrl
-nextNextAudioUrl
-
-含义：
-
-currentAudioUrl
-当前播放音频
-
-nextAudioUrl
-下一段音频
-
-nextNextAudioUrl
-下下段音频
-
-播放结束时：
-
-next → current
-nextNext → next
-生成新的 nextNext
-启动速度优化
-
-为了减少启动等待：
-
-第一段：
-
-≈ 400 字
-
-后续段：
-
-≈ 2200 字
-
-实现：
-
-first chunk small
-rest chunks large
-
-效果：
-
-显著减少首段等待时间。
-
-缓存系统
-音频缓存
-
-前端使用：
-
-IndexedDB
-
-缓存 Key：
-
-hash(text + mode + voice)
-
-缓存内容：
-
-audioBlob
-
-流程：
-
-先查缓存
-命中 → 直接播放
-未命中 → 请求 TTS
-改写缓存
-
-服务器缓存：
-
-rewrite_cache.json
-
-避免重复调用 OpenAI。
-
-播放器状态机
-
-播放器可以理解为以下状态：
-
-Idle
-Generating
-Playing
-Interrupted
-Finished
-
-状态转换：
-
-Generate
-↓
-Generating
-↓
-Playing
-↓
-Ended
-↓
-Playing next
-关键变量说明
-currentJobId
-
-用于防止任务串线。
-
-每次生成：
-
-currentJobId + 1
-
-旧任务返回：
-
-jobId != currentJobId
-→ 直接丢弃
-AbortController
-
-用于中断任务。
-
-interruptPlayback()
-
-功能：
-
-停止播放
-abort TTS
-abort 预生成
-清理URL
-主要代码文件
-
-前端：
-
-public/app.js
-public/audioEngine.js
-
-后端：
-
-server.js
-tts_edge.py
-
-缓存：
-
-IndexedDB
-rewrite_cache.json
-当前功能完成度
-
-当前已经实现：
-
-AI 改写
-Edge TTS
-自动分段
-pipeline 预生成
-音频缓存
-改写缓存
-PDF / Word 导入
-URL 抓取
-任务打断
-播放恢复
-
-项目完成度：
-
-≈ 80%
-当前最大瓶颈
-
-启动时间仍然受影响：
-
-LLM rewrite latency
-≈ 20~40 秒
-
-原因：
-
-AI 改写耗时。
-
-未来优化方向
-
-未来可能优化：
-
-改写缓存优化
-rewrite 与 TTS 并行
-Streaming LLM
-更智能分段
-控制预生成数量
-允许 AI 修改的内容
-预生成策略优化
-缓存策略优化
-性能优化
-日志优化
-UI小改动
-禁止 AI 修改的内容
-播放器核心结构
-pipeline逻辑
-分段算法
-缓存机制
-整体架构
-开发原则
-
-优先级：
-
-稳定性
-↓
-播放连续性
-↓
-启动速度
-↓
-功能扩展
-
-避免复杂设计。
-
-AI 修改代码规则：
-
-1 必须提供完整可替换代码
-2 不允许只给片段
-3 不允许提出多种方案
-4 用户是初学者
-5 必须一步一步修改
-
-# AI-Reader 项目 AI_CONTEXT v3.1（优化阶段）
-
-## 开发阶段说明（非常重要）
-当前项目已进入【优化阶段】，不是【架构开发阶段】。
-
-协作规则：
-- 禁止重写系统架构
-- 禁止重写播放器核心 pipeline 逻辑
-- 禁止大规模代码改动
-- 必须一步一步修改
-- 只改必要代码
-- 必须提供可直接整体替换的完整代码（禁止只给片段）
-- 不提供多方案分支（默认给最稳妥单方案）
-
-目标：在稳定架构上逐步优化。
-
----
-
-## 产品定位（新增：最重要）
-对外产品概念从“朗读模式”升级为【朗读角色】（Role-based Reading）。
-
-当前只做两个角色：
-1) 播音员：忠于原文、克制、不点评、不加戏
-2) 说书人：忠于主线与事实，可适度点评/调侃/铺垫，让听感更像“讲故事”
-
-说明：
-- 对内实现字段暂时仍使用 mode（避免大改），但对外统一称“角色”。
-
-### 角色与声线默认绑定（新增）
-- 播音员：默认 young_female
-- 说书人：默认 elder_male
-- 当前阶段不做 UI 大改，声线选择器可暂保留，但默认值必须按角色绑定。
-
-### 翻译规则（新增：两角色共用）
-- 输入为古文/外文：无论播音员/说书人，必须先翻译成现代中文再进入后续流程。
-- 当前阶段可先不做自动识别，后续再优化；但产品规则先定死。
-
----
-
-## 项目目标
-AI-Reader 是一个 AI 文章朗读播放器。
-目标：将普通文章转换为接近有声书体验的连续播放。
-
-用户流程：
-输入文本 / PDF / Word / URL
-↓
-AI 文本处理（翻译/改写，取决于角色与输入类型）
-↓
-TTS 生成语音
-↓
-自动分段播放
-↓
-后台预生成下一段
-
-最终目标：AI 有声书播放器，而不是简单 TTS。
-
----
-
-## 系统架构图
-Browser (Frontend)
-│
-├─ public/app.js
-│   ├─ 文本分段 splitTextIntoChunks()
-│   ├─ 播放器控制
-│   ├─ pipeline 预生成
+│   ├─ 文本分段 splitTextIntoChunks()（禁止改动算法）
+│   ├─ 播放器控制（播放/暂停/自动续播）
+│   ├─ pipeline 预生成（最多领先 1~2 段）
 │   └─ 调用 audioEngine.js
 │
 ├─ public/audioEngine.js
@@ -393,45 +58,113 @@ Browser (Frontend)
 │   └─ POST /tts
 │
 ▼
-Node Server (server.js)
+Node Server
 │
-├─ OpenAI API
-│   ├─ 文本处理（翻译/改写）
-│   └─ rewrite_cache.json
+├─ server.js
+│   ├─ OpenAI API：rewrite / translate（含 rewrite_cache.json）
+│   └─ Edge TTS 调用（tts_cache 文件校验）
 │
 └─ Edge TTS
-    └─ tts_edge.py → 生成 mp3
+   └─ tts_edge.py 生成 mp3
 
----
-
-## Pipeline 工作流程
+六、Pipeline 工作流程（核心）
+正确流程：
 生成 chunk1 → 播放 chunk1
-同时后台生成 chunk2、chunk3
-播放 chunk2 时生成 chunk4
-目标：播放器始终有音频缓冲区。
+同时后台生成 chunk2 / chunk3
+播放 chunk2 的同时继续生成 chunk4…
+目标：播放器始终有音频缓冲区，避免“播完再等生成”。
 
----
+七、Pipeline 并行规则（非常重要）
+播放 与 生成 必须并行。
+禁止：播放结束 → 再生成下一段。
+生成必须领先播放至少 1~2 段。
+AI 修改代码时禁止破坏该机制。
 
-## 缓存一致性规则（新增：防止坏缓存）
-- tts_cache 命中条件：文件存在且 size > 100 bytes（阈值可调整）
-- 否则视为坏缓存：删除并重新生成
-- 目的：避免 edge-tts 失败留下空文件导致“cache hit 但无法播放”
+八、Chunk 顺序规则（非常重要）
+即使后台生成顺序不同：播放顺序必须严格按 chunkIndex。
+禁止：按返回快慢来播放。
 
----
+九、Pipeline 并发限制
+最多同时生成 2 段（next / nextNext）。
+目的：控制 OpenAI 并发与 CPU，避免生成无用音频。
 
-## 错误处理原则（新增：不中断播放）
-- 任一段生成失败不得让播放“卡死在下一段”
-- 最低兜底：提示用户，并提供 重试 / 跳过 / 停止
-- 优先级：不中断用户体验 > 完美改写/完美音质
+十、播放器缓存结构（前端）
+currentAudioUrl：当前播放
+nextAudioUrl：下一段
+nextNextAudioUrl：下下段
+播放结束：next → current；nextNext → next；再生成新的 nextNext。
 
----
+十一、启动速度优化
+首段较小：≈ 400 字（更快出第一段）
+后续段：≈ 2200 字（整体效率更好）
 
-## 验证与日志（新增）
-- server 每次 /tts 打印 rewrite previous: NONE 或 last 60 chars
-- 目标：从第 2 段开始不再是 NONE（说明 previous 传递生效）
-- 听感目标：段与段之间不再像“重新开场”
+十二、音频缓存（前端）
+IndexedDB
+key：hash(text + mode + voice)
+命中：直接播放
+未命中：请求 /tts → 缓存 blob
 
----
+十三、改写缓存（后端）
+rewrite_cache.json
+目的：避免重复调用 OpenAI。
 
-## 其余章节（沿用 v3 原文）
-（pipeline 三段缓存、首段加速、jobId、Abort、文件列表、完成度、未来方向等保持不变）
+十四、缓存一致性规则
+任何缓存命中必须校验 size > 100 bytes
+否则删除并重新生成（避免空文件/坏缓存）。
+
+十五、播放器状态机（原则）
+Idle → Generating → Playing → Finished / Interrupted
+任何错误不得导致“卡死”。
+
+十六、任务隔离机制
+currentJobId：每次新任务 +1
+旧任务返回：jobId != currentJobId → 直接丢弃，避免串线。
+
+十七、任务中断机制
+AbortController + interruptPlayback()
+功能：停止播放 / abort 当前请求 / abort 预生成 / 清理 objectURL。
+
+十八、错误处理原则
+任何一段失败：不中断整体可控性
+最低兜底：能停止 / 能重试 / 能继续下一段（优先“不卡死”）。
+
+十九、验证与日志（后端）
+每次 /tts 建议打印：
+- MODE
+- rewrite previous: NONE 或 last 60 chars
+- rewrite meta: role / chunk / previous
+用于确认上下文衔接是否生效。
+
+二十、UI/交互规则（v5 新增）
+1) 默认声线自动切换：
+- 选择 original → 自动设置 voice=young_female
+- 选择 story → 自动设置 voice=elder_male
+2) 播放/暂停合并为一个按钮：playPauseBtn（随播放状态切换文案）
+3) 增加“定时关闭（sleep timer）”：到点后停止播放并终止预生成（走 interruptPlayback）
+4) actions 行不换行：按钮与 sleepTimer 控件同一行展示（窄屏不掉到第二行）
+
+二十一、进度条策略（当前）
+当前进度显示仍以“段落进度”为主（chunk 级）。
+播放器本身也提供时间进度条；后续是否移除段落进度，等试用后再定。
+
+二十二、主要代码文件
+前端：public/app.js / public/audioEngine.js
+后端：server.js / tts_edge.py
+缓存：IndexedDB / rewrite_cache.json / tts_cache
+
+二十三、当前功能完成度
+已实现：AI 改写、Edge TTS、自动分段、pipeline 预生成、音频缓存、rewrite 缓存、PDF/Word 导入、URL 抓取、任务打断、播放恢复、默认声线、播放按钮合并、定时关闭
+完成度：≈ 85%
+
+二十四、当前最大瓶颈
+启动时间主要受：LLM rewrite latency（约 20~40 秒）影响。
+
+二十五、开发优先级（不变）
+稳定性 → 播放连续性 → 启动速度 → 功能扩展
+
+二十六、AI 修改代码规则（最终版）
+1) 必须提供完整可替换代码
+2) 不允许只给代码片段
+3) 不允许提出多种方案
+4) 用户是初学者
+5) 必须一步一步修改
