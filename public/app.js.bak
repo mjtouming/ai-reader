@@ -172,147 +172,6 @@ function splitTextIntoChunks(text, opts = {}) {
   return chunks;
 }
 
-// ✅ 新增：电子书“开头垃圾信息/目录”清理（所有模式都生效）
-// 目标：删掉作者/出版社/ISBN/版权页，以及开头连续的“第一章 第二章 …”目录块
-// 策略：只处理“开头一段”，非常保守，避免误删正文
-function cleanBookTextForReading(rawText) {
-  const text = (rawText || "").replace(/\r/g, "").trim();
-  if (!text) return "";
-
-  // 只扫描开头 N 行，避免误伤正文中间内容
-  const MAX_HEAD_LINES = 220;
-  const lines = text.split("\n");
-
-  const head = lines.slice(0, MAX_HEAD_LINES);
-  const tail = lines.slice(MAX_HEAD_LINES);
-
-  // 1) 清理开头元信息（作者/出版社/ISBN/版权等）
-  // 只删“看起来像元信息的一整行”
-  const metaLineRe = new RegExp(
-    [
-      "^\\s*(作者|编者|译者|校注|整理|出品|出版|出版社|出版方|出品方|责任编辑|责任编辑|策划|监制)\\s*[:：].*$",
-      "^\\s*(ISBN|书号|CIP|版次|印次|定价|字数|开本|装帧|页数|印刷|印刷厂|发行|网址|邮箱|电话)\\s*[:：].*$",
-      "^\\s*(版权|版权声明|版权所有|著作权|免责声明|前言|序言|引言|推荐序|出版说明|再版说明)\\s*$",
-      "^\\s*©\\s*\\d{4}.*$",
-      "^\\s*All\\s+rights\\s+reserved\\s*.*$"
-    ].join("|"),
-    "i"
-  );
-
-  // 2) 识别“目录块”：开头连续多行的章节标题
-  // 例：第一章 / 第十二章 / Chapter 1 / 1. / 第一回 / 楔子 / 序章
-  const tocLineRe = new RegExp(
-    [
-      "^\\s*(目录|目\\s*录|contents)\\s*$",
-      "^\\s*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*(章|回|节|卷|篇|部)\\b.*$",
-      ^\\s*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*(章|回)\\s*$
-      "^\\s*(Chapter|CHAPTER)\\s*\\d+\\b.*$",
-      "^\\s*\\d+\\s*[\\.、]\\s*.+$",
-      "^\\s*(楔子|序章|终章|后记|番外|引子)\\s*$"
-    ].join("|"),
-    "i"
-  );
-
-  // 先把 head 做一遍“元信息删除”
-  let cleanedHead = [];
-  for (let i = 0; i < head.length; i++) {
-    const line = head[i].trim();
-    if (!line) {
-      cleanedHead.push(""); // 保留空行结构
-      continue;
-    }
-    // 删除非常明确的元信息行
-    if (metaLineRe.test(line)) continue;
-
-    cleanedHead.push(head[i]);
-  }
-
-  // 再尝试删除“目录块”
-  // 规则：从头开始找，出现（目录/章节标题）密度很高的一段，就判定为目录块并删掉
-  // 判定方式：在一个窗口里，tocLineRe 命中 >= 6 行，并且命中占比 >= 60%
-  const WINDOW = 18;
-  let cutStart = -1;
-  let cutEnd = -1;
-
-  const headLines = cleanedHead;
-
-  // 找目录块起点（更保守：必须在前 120 行内出现）
-  const SEARCH_LIMIT = Math.min(120, headLines.length);
-
-  for (let i = 0; i < SEARCH_LIMIT; i++) {
-    // 找到 “目录” 这一行，优先从这里开始判定
-    const t = (headLines[i] || "").trim();
-    if (/^(目录|目\s*录|contents)\s*$/i.test(t)) {
-      cutStart = i;
-      break;
-    }
-  }
-
-  // 如果没找到“目录”行，就用窗口密度找一段目录块（更保守：只在前 80 行找）
-  if (cutStart === -1) {
-    const DENSE_LIMIT = Math.min(80, headLines.length);
-    for (let i = 0; i < DENSE_LIMIT; i++) {
-      const end = Math.min(i + WINDOW, headLines.length);
-      const slice = headLines.slice(i, end);
-
-      let hit = 0;
-      let nonEmpty = 0;
-
-      for (const s of slice) {
-        const line = (s || "").trim();
-        if (!line) continue;
-        nonEmpty++;
-        if (tocLineRe.test(line)) hit++;
-      }
-
-      if (nonEmpty >= 8 && hit >= 6 && hit / nonEmpty >= 0.6) {
-        cutStart = i;
-        break;
-      }
-    }
-  }
-
-  // 有目录块起点，就继续往下扩展，直到连续多行都不像目录为止
-  if (cutStart !== -1) {
-    let i = cutStart;
-    let looseCount = 0;
-
-    for (; i < headLines.length; i++) {
-      const line = (headLines[i] || "").trim();
-
-      // 空行不算结束（目录里常有空行）
-      if (!line) continue;
-
-      if (tocLineRe.test(line) || /^(目录|目\s*录|contents)\s*$/i.test(line)) {
-        looseCount = 0;
-        continue;
-      } else {
-        // 连续多行不匹配就认为目录结束
-        looseCount++;
-        if (looseCount >= 3) {
-          cutEnd = i; // i 这一行开始算正文
-          break;
-        }
-      }
-    }
-
-    // 如果一直到末尾都是目录样式，那就全部当目录删掉
-    if (cutEnd === -1) cutEnd = headLines.length;
-
-    // 删掉目录块
-    const kept = headLines.slice(0, cutStart).concat(headLines.slice(cutEnd));
-    cleanedHead = kept;
-  }
-
-  // 合并回正文：head + tail
-  const merged = cleanedHead.concat(tail).join("\n");
-
-  // 最后做一次简单的空行压缩（最多保留 2 个连续空行）
-  return merged
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 /** ✅ 新增：立刻停止当前播放/队列/网络请求，并清理资源 */
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
@@ -544,19 +403,11 @@ fileInput?.addEventListener("change", async function () {
 
 // ✅ 生成音频（可随时打断）
 generateBtn?.addEventListener("click", async function () {
-  let text = textInput.value;
+  const text = textInput.value;
   if (!text) {
     alert("请输入文字");
     return;
   }
-
-  // ✅ 新增：分段前清理“电子书开头目录/元信息”（所有模式都生效）
-const cleaned = cleanBookTextForReading(text);
-if (cleaned && cleaned.trim().length > 0) {
-  text = cleaned;
-  // 回写文本框：方便你肉眼确认“目录确实被删掉了”
-  textInput.value = cleaned;
-}
 
   // 1) 立刻打断上一轮
   interruptPlayback("已打断，按当前设置重新生成…");

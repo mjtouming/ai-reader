@@ -67,16 +67,19 @@
 
         <div class="actions">
           <button id="generateBtn" class="btn primary">生成并播放</button>
-          <button id="playPauseBtn" class="secondary-btn">▶️ 播放</button>
 
-        <select id="sleepTimer">
+          <button id="playPauseBtn" class="btn secondary playpause" type="button">
+          ▶ 播放
+          </button>
+
+         <select id="sleepTimer" class="sleep-select">
           <option value="0">定时关闭</option>
-          <option value="900">15分钟</option>
-          <option value="1800">30分钟</option>
-          <option value="3600">60分钟</option>
-          <option value="end">本段播放完</option>
+          <option value="5">5 分钟</option>
+          <option value="10">10 分钟</option>
+          <option value="20">20 分钟</option>
+          <option value="30">30 分钟</option>
         </select>
-        </div>
+      </div>
 
        <div class="progress">
   <progress id="progressBar" value="0" max="100"></progress>
@@ -112,6 +115,6 @@
     </footer>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <script src="/app.js?v=1"></script>
 </body>
 </html>

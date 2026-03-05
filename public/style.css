@@ -359,11 +359,69 @@ audio{ width: 100%; border-radius: 14px; }
 
 
 #sleepTimer{
-  width:140px;
-  flex:0 0 140px;
-  max-width:140px;
+  width:120px;
+  flex:0 0 auto;
+  max-width:120px;
 }
 
 .actions .btn{
   white-space: nowrap;        /* ✅ 防止按钮文字换行 */
+}
+
+/* ===== Actions row: unify button + select (重要：放在CSS最底部覆盖前面的select样式) ===== */
+.actions{
+  display:flex;
+  gap:12px;
+  margin-top:16px;
+  align-items:center;
+  justify-content:flex-start;
+  flex-wrap:nowrap;
+}
+
+/* 统一高度、视觉风格 */
+.actions .btn,
+.actions .sleep-select{
+  height:48px;
+  border-radius:999px;
+  font-size:15px;
+  font-weight:900;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  white-space:nowrap;
+}
+
+/* 播放按钮：更像 iOS 的次要按钮 */
+.actions .btn.playpause{
+  padding: 0 18px;
+  background: rgba(15,23,42,.03);
+  border: 1px solid rgba(15,23,42,.10);
+  box-shadow: none;
+}
+
+/* 定时关闭：让 select 看起来像按钮，而不是“表单输入框” */
+.actions .sleep-select{
+  width:140px;
+  flex:0 0 140px;
+  padding: 0 40px 0 18px;
+  border: 1px solid rgba(15,23,42,.10);
+  background: rgba(15,23,42,.03);
+  color: var(--text);
+
+  /* 尽量统一不同浏览器的外观 */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  /* 自己画一个下拉箭头（稳定，不会跑版） */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20'%3E%3Cpath fill='%230f172a' fill-opacity='0.55' d='M5.5 7.5 10 12l4.5-4.5 1.4 1.4L10 14.8 4.1 8.9z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 14px 14px;
+}
+
+/* 防止 select 因为你全局的 width:100% 把布局撑坏 */
+.actions select.sleep-select{
+  width:140px !important;
 }
