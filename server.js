@@ -30,7 +30,17 @@ const fetch = global.fetch;
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+// ===== 静态文件 =====
+const publicPath = path.join(__dirname, "public");
+
+console.log("Static path:", publicPath);
+
+app.use(express.static(publicPath));
+
+// Railway 有时会把根路由交给 server，需要手动返回 index.html
+app.get("/", (req, res) => {
+  res.sendFile(path.join(publicPath, "index.html"));
+});
 
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: "uploads/" });

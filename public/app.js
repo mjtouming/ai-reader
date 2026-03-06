@@ -32,6 +32,7 @@ let currentIndex = 0;
 let isAutoPlaying = false;
 let sleepTimerId = null;
 let sleepMode = null;
+let restoreTime = 0;
 
 /** ✅ 新增：用于“可中断生成”的控制 */
 let currentAbort = null;     // AbortController
@@ -45,7 +46,9 @@ const SESSION_KEY = "ai_reader_session_v1";
 function saveSession(patch = {}) {
   try {
     const prev = loadSession() || {};
+
     const data = {
+      ...prev,
       text: textInput?.value || "",
       chunks,
       currentIndex,
@@ -53,12 +56,14 @@ function saveSession(patch = {}) {
       mode: modeSelect?.value || "original",
       voice: voiceSelect?.value || "young_female",
       speed: speedSelect?.value || "1",
-      ...prev,
       ...patch,
       updatedAt: Date.now()
     };
+
     localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-  } catch {}
+  } catch (e) {
+    console.log("saveSession error:", e);
+  }
 }
 
 function loadSession() {
@@ -397,7 +402,17 @@ async function playChunk(index, jobId) {
   currentAudioUrl = audioUrl;
 
   audioPlayer.src = audioUrl;
+  audioPlayer.currentTime = 0;   // ⭐新增
   audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
+
+  if (restoreTime > 0) {
+    audioPlayer.addEventListener("loadedmetadata", () => {
+      try {
+        audioPlayer.currentTime = restoreTime;
+        restoreTime = 0;
+      } catch {}
+   }, { once: true });
+  }
 
   setStatus(`播放第 ${index + 1}/${total} 段（${mode} / ${voice}）`, "ok", {
     busy: true,
@@ -580,6 +595,13 @@ if (firstParts.length > 1) {
   chunks = firstParts;
 }
   currentIndex = 0;
+
+   // ⭐新增
+  saveSession({
+    chunks,
+    currentIndex
+  });
+
   isAutoPlaying = true;
 
   if (chunks.length === 0) {
@@ -604,12 +626,40 @@ if (firstParts.length > 1) {
 // 播放/暂停（保持）
 const playPauseBtn = document.getElementById("playPauseBtn");
 
-playPauseBtn?.addEventListener("click", function () {
+playPauseBtn?.addEventListener("click", async function () {
+
+  // 恢复状态：没有 src
+  if (!audioPlayer.src && chunks.length > 0) {
+
+    try {
+
+      isAutoPlaying = true;
+
+      currentJobId += 1;
+      const jobId = currentJobId;
+
+      await playChunk(currentIndex, jobId);
+
+      playPauseBtn.innerText = "⏸ 暂停";
+
+    } catch (e) {
+
+      console.error("恢复播放失败:", e);
+      setStatus("恢复播放失败 ❌", "bad");
+
+    }
+
+    return;
+  }
 
   if (audioPlayer.paused) {
 
-    audioPlayer.play();
-    playPauseBtn.innerText = "⏸ 暂停";
+    try {
+      await audioPlayer.play();
+      playPauseBtn.innerText = "⏸ 暂停";
+    } catch (e) {
+      console.log("播放失败:", e);
+    }
 
   } else {
 
@@ -624,6 +674,12 @@ playPauseBtn?.addEventListener("click", function () {
 let lastSessionSave = 0;
 
 audioPlayer?.addEventListener("timeupdate", function () {
+
+if (sleepTargetTime && Date.now() >= sleepTargetTime) {
+  interruptPlayback("定时关闭");
+  sleepTargetTime = null;
+  return;
+}
 
   saveProgress(audioPlayer.currentTime);
 
@@ -660,18 +716,22 @@ window.addEventListener("load", function () {
     speedSelect.value = session.speed || "1";
 
     if (session.currentTime != null) {
-  audioPlayer.currentTime = session.currentTime;
-}
+       restoreTime = session.currentTime;
+    }
 
     if (chunks.length > 0) {
-      setStatus(
+
+       isAutoPlaying = false;
+
+       setStatus(
         `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
-        "ok",
+         "ok",
         {
-          step: currentIndex,
-          total: chunks.length
+         step: currentIndex,
+         total: chunks.length
         }
       );
+
     }
 
   } catch (e) {
@@ -716,8 +776,19 @@ audioPlayer?.addEventListener("ended", async function () {
   currentAudioUrl = url;
 
   audioPlayer.src = url;
+  audioPlayer.currentTime = 0;   // ⭐新增
   audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
-  setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
+
+if (restoreTime > 0) {
+  audioPlayer.addEventListener("loadedmetadata", () => {
+    try {
+      audioPlayer.currentTime = restoreTime;
+      restoreTime = 0;
+    } catch {}
+  }, { once: true });
+}
+
+setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
   busy: true,
   step: currentIndex + 1,
   total: chunks.length
@@ -822,16 +893,14 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+let sleepTargetTime = null;
+
 sleepTimer?.addEventListener("change", function () {
 
   const value = sleepTimer.value;
 
-  if (sleepTimerId) {
-    clearTimeout(sleepTimerId);
-    sleepTimerId = null;
-  }
-
   sleepMode = null;
+  sleepTargetTime = null;
 
   if (value === "0") {
     setStatus("定时关闭已取消", "info");
@@ -846,11 +915,7 @@ sleepTimer?.addEventListener("change", function () {
 
   const seconds = parseInt(value);
 
-  sleepTimerId = setTimeout(() => {
-
-    interruptPlayback("定时关闭");
-
-  }, seconds * 1000);
+  sleepTargetTime = Date.now() + seconds * 1000;
 
   setStatus(`已设置 ${seconds / 60} 分钟后关闭`, "info");
 
