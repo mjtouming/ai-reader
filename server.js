@@ -427,7 +427,7 @@ app.post("/tts", async (req, res) => {
     // - mode === "story"     → 说书人
     // - mode === "translate" → 翻译
     // - 其他（含空/normal） → 播音员（朗读优化）
-    const needRewrite = mode === "story" || mode === "translate" || mode === "announcer";
+    const needRewrite = mode === "story" || mode === "translate" || mode === "announcer" || mode === "original";
 
     if (needRewrite) {
       const cacheKey = createRewriteKey(inputText, mode || "announcer");
@@ -569,6 +569,8 @@ ${inputText}
     }
 
     res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("X-Rewritten-Text", encodeURIComponent(inputText));
+
 
     const stream = fs.createReadStream(outFile);
 

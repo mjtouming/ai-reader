@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js';
+import { generateAudioFromText } from './audioEngine.js?v=20260310-2';
 import { saveProgress, loadProgress } from './storage.js';
 
 const textInput = document.getElementById("textInput");
@@ -28,6 +28,7 @@ const progressLabel = document.getElementById("progressLabel");
 const sleepTimer = document.getElementById("sleepTimer");
 
 let chunks = [];
+let rewrittenChunks = [];   // ⭐新增：保存 rewrite 结果
 let currentIndex = 0;
 let isAutoPlaying = false;
 let sleepTimerId = null;
@@ -41,6 +42,7 @@ let currentAudioUrl = null;  // 释放 objectURL，避免内存泄漏
 let nextAudioUrl = null;
 let nextAbort = null;
 let nextNextAudioUrl = null;
+let preGeneratingIndex = -1; // 正在预生成的 index，防止重复生成
 const SESSION_KEY = "ai_reader_session_v1";
 
 function saveSession(patch = {}) {
@@ -333,6 +335,7 @@ if (nextAbort) {
   try { nextAbort.abort(); } catch {}
   nextAbort = null;
 }
+preGeneratingIndex = -1; // ✅ 重置预生成状态
 
 // ✅ 释放预生成的音频URL（nextAudioUrl）
 if (nextAudioUrl) {
@@ -380,13 +383,36 @@ async function playChunk(index, jobId) {
   currentAbort = abort;
 
   // ✅ 关键：把 signal 传进去（需要配合 audioEngine.js 的小改动，见后面）
-  const audioUrl = await generateAudioFromText(
-  chunks[index],
+  let result;
+
+try {
+
+  // 如果已经 rewrite 过，就直接用 rewrite 后文本
+const textToSend = rewrittenChunks[index] || chunks[index];
+
+result = await generateAudioFromText(
+  textToSend,
   mode,
   voice,
   abort.signal,
-  chunks[index - 1] || null
+  rewrittenChunks[index - 1] || null,
+  index + 1,
+  chunks.length
 );
+
+} catch (e) {
+
+  if (e?.name === "AbortError") {
+    console.log("生成被取消");
+    return;
+  }
+
+  throw e;
+
+}
+
+const audioUrl = result.url;
+const rewrittenText = result.rewritten;
 
 
 
@@ -394,6 +420,9 @@ async function playChunk(index, jobId) {
   if (jobId !== currentJobId) return;
 
   if (!audioUrl) throw new Error("audioUrl is null (TTS failed)");
+  if (!rewrittenChunks[index] && rewrittenText) {
+  rewrittenChunks[index] = rewrittenText;
+  }
 
   // 清理旧的 objectURL
   if (currentAudioUrl) {
@@ -439,9 +468,9 @@ async function playChunk(index, jobId) {
 }
 
 async function preGenerateNext(index, jobId) {
-
   if (index >= chunks.length) return;
-
+  if (preGeneratingIndex === index) return;
+  preGeneratingIndex = index;
   const mode = modeSelect?.value || "original";
   const voice = voiceSelect?.value || "young_female";
 
@@ -450,13 +479,24 @@ async function preGenerateNext(index, jobId) {
 
   try {
 
-    const url = await generateAudioFromText(
-      chunks[index],
-      mode,
-      voice,
-      abort.signal,
-      chunks[index - 1] || null
+    const textToSend = rewrittenChunks[index] || chunks[index];
+
+    const result = await generateAudioFromText(
+     textToSend,
+     mode,
+     voice,
+     abort.signal,
+     rewrittenChunks[index - 1] || null,
+     index + 1,
+     chunks.length
     );
+
+    const url = result.url;
+    const rewrittenText = result.rewritten;
+
+    if (!rewrittenChunks[index] && rewrittenText) {
+      rewrittenChunks[index] = rewrittenText;
+    }
 
     // 如果已经开启了新任务，旧任务结果直接丢弃
     if (jobId !== currentJobId) return;

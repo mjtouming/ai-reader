@@ -71,7 +71,9 @@ function createCacheKey(text, mode, voice) {
 }
 
 // ===== 生成音频 =====
-export async function generateAudioFromText(text, mode, voice, signal, previous) {
+// ✅ 修复1：增加 chunkIndex / totalChunks 参数，传给 /tts
+// ✅ 修复2：返回 { url, rewritten } 对象，而不是直接返回字符串
+export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks) {
 
   const key = createCacheKey(text, mode, voice);
 
@@ -80,7 +82,8 @@ export async function generateAudioFromText(text, mode, voice, signal, previous)
 
   if (cached) {
     console.log("🎧 使用缓存音频");
-    return URL.createObjectURL(cached);
+    // ✅ 修复2：缓存命中也返回对象格式
+    return { url: URL.createObjectURL(cached), rewritten: null };
   }
 
   // ===== 自动 retry =====
@@ -97,7 +100,10 @@ export async function generateAudioFromText(text, mode, voice, signal, previous)
           text,
           mode,
           voice,
-          previous
+          previous,
+          // ✅ 修复1：把段落信息传给服务端
+          chunkIndex,
+          totalChunks
         }),
         signal
       });
@@ -107,12 +113,18 @@ export async function generateAudioFromText(text, mode, voice, signal, previous)
         throw new Error(errText);
       }
 
+      // ✅ 修复2：从响应头读取 rewritten 文本（需要服务端配合，见下方说明）
+      const rewritten = response.headers.get("X-Rewritten-Text")
+        ? decodeURIComponent(response.headers.get("X-Rewritten-Text"))
+        : null;
+
       const audioBlob = await response.blob();
 
       // ===== 写入缓存 =====
       await saveCachedAudio(key, audioBlob);
 
-      return URL.createObjectURL(audioBlob);
+      // ✅ 修复2：返回对象
+      return { url: URL.createObjectURL(audioBlob), rewritten };
 
     } catch (err) {
 
