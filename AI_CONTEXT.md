@@ -1,80 +1,230 @@
-AI-Reader 项目 AI_CONTEXT v6（稳定开发版）
-
+AI-Reader 项目 AI_CONTEXT v7（稳定开发版）
 一、开发阶段说明（非常重要）
-当前项目阶段：优化阶段（不是架构开发阶段）
+
+当前项目阶段：
+
+优化阶段（不是架构开发阶段）
 
 因此 AI 协作必须遵守：
 
-禁止事项：
-- 禁止重写系统架构
-- 禁止重写播放器核心 pipeline
-- 禁止修改分段算法（splitTextIntoChunks）
-- 禁止重写缓存机制（IndexedDB / rewrite_cache / tts_cache）
-- 禁止进行大规模代码重构
+禁止事项
 
-AI 修改代码时必须：
-- 一步一步修改
-- 只修改必要代码
-- 保持当前架构
-- 提供“完整可替换代码”（不允许只给片段）
-- 不允许提出多个方案（默认给一个最稳妥方案）
-- 用户是初学者：必须给可直接复制替换的一体化代码
+禁止重写系统架构
+
+禁止重写播放器核心 pipeline
+
+禁止修改分段算法（splitTextIntoChunks）
+
+禁止重写缓存机制（IndexedDB / rewrite_cache / tts_cache）
+
+禁止进行大规模代码重构
+
+AI 修改代码时必须
+
+一步一步修改
+
+只修改必要代码
+
+保持当前架构
+
+提供“完整可替换代码”（不允许只给片段）
+
+不允许提出多个方案（默认给一个最稳妥方案）
+
+用户是初学者：必须给可直接复制替换的一体化代码
 
 二、产品定位（最重要）
-AI-Reader 是：AI 有声书播放器
-不是：简单 TTS 朗读工具
 
-目标：把普通文章转换为“接近有声书体验”的连续播放。
-核心价值：Rewrite + 连续播放（pipeline 预生成）
+AI-Reader 是：
 
+AI 有声书播放器
+
+不是：
+
+简单 TTS 朗读工具
+
+目标：
+
+把普通文章转换为：
+
+接近有声书体验的连续播放
+
+核心价值：
+
+Rewrite + Streaming Pipeline + 连续播放
 三、朗读角色（Role-based Reading）
-对外概念：朗读角色（Role）
+
+对外概念：
+
+朗读角色（Role）
+
 当前支持两个角色：
 
-1) 播音员（Announcer）
-- 特点：忠于原文、不评论、不加戏、语气克制、朗读更“干净”
-- 默认声线：young_female
+1）播音员（Announcer）
 
-2) 说书人（Storyteller）
-- 特点：忠于主线、允许适度点评/调侃、更像“讲”而不是“念”
-- 默认声线：elder_male
+特点：
 
-内部实现说明：
-- 前端 modeSelect：original / story / translate
-- 服务端根据 mode 选择不同 prompt（ANNOUNCER / STORYTELLER / TRANSLATE）
-- 当前阶段：对外统一叫“角色”，内部继续沿用 mode，避免大改动
+忠于原文
+
+不评论
+
+不加戏
+
+语气克制
+
+更像专业播音员
+
+默认声线：
+
+young_female
+2）说书人（Storyteller）
+
+特点：
+
+忠于主线
+
+允许适度点评
+
+更像讲故事
+
+有情绪和语气变化
+
+默认声线：
+
+elder_male
+内部实现说明
+
+前端：
+
+modeSelect
+
+支持：
+
+original
+story
+translate
+
+服务端根据 mode 使用不同 prompt：
+
+ANNOUNCER
+STORYTELLER
+TRANSLATE
+
+当前阶段：
+
+对外统一叫 Role
+
+内部继续使用：
+
+mode
+
+避免大规模代码修改。
 
 四、翻译规则
-如果输入文本为：古文 / 英文 / 日文 / 其他外文
-必须先：翻译成现代中文
-再进入：AI 改写 → TTS
-当前阶段：可以先不做自动识别（产品规则先确定）。
 
-五、Smart Cleaner（v6 新增：电子书结构清理）
-目的：自动忽略电子书开头“无意义朗读内容”，提升启动体验与可用性。
+如果输入文本为：
 
-要清理的典型内容（只针对开头区域，保守处理）：
-- 作者 / 编者 / 译者 / 出版社 / 出版信息 / 版权声明 / ISBN / CIP / 定价等元信息
-- 目录块（连续“第一章/第二章/…”，“Chapter 1/2/…”，“1. …” 等）
-- 序章/楔子/引子/后记/番外 等作为目录块一部分出现时的标题行
+古文
+英文
+日文
+其他外文
 
-实现位置（当前版本）：前端 public/app.js
-- 函数：cleanBookTextForReading(rawText) 或 cleanBookTextForReading（以实际命名为准）
-- 调用时机：点击“生成并播放”后，在 splitTextIntoChunks 之前执行
-- 原则：只扫描开头固定行数（例如 200 行内），避免误删正文中段内容
-- 说明：此清理不调用 OpenAI，不增加服务端压力，且能减少“无意义 chunk”生成，整体更省钱更快
+流程必须是：
 
-注意：该清理在所有模式下都生效（original / story / translate），因为原文朗读同样需要跳过目录。
+翻译 → 改写 → TTS
+
+即：
+
+外文
+↓
+现代中文
+↓
+AI Rewrite
+↓
+TTS
+
+当前阶段：
+
+不强制自动识别语言
+（产品规则先确定）
+
+五、Smart Cleaner（电子书结构清理）
+
+目的：
+
+自动忽略电子书开头：
+
+无意义朗读内容
+
+提升：
+
+启动速度
+可用性
+典型清理内容
+
+只针对开头区域：
+
+作者
+
+编者
+
+译者
+
+出版社
+
+出版信息
+
+ISBN
+
+CIP
+
+定价
+
+版权声明
+
+以及：
+
+目录块
+
+例如：
+
+第一章
+第二章
+Chapter 1
+1.
+实现位置
+
+前端：
+
+public/app.js
+
+函数：
+
+cleanBookTextForReading()
+
+调用时机：
+
+生成并播放
+↓
+Smart Cleaner
+↓
+splitTextIntoChunks
+
+原则：
+
+只扫描开头 ~200 行
+
+避免误删正文。
 
 六、系统架构（保持不变）
-Browser (Frontend)
+Browser
 │
 ├─ public/app.js
-│   ├─ Smart Cleaner（v6：电子书结构清理）
-│   ├─ 文本分段 splitTextIntoChunks()（禁止改动算法）
-│   ├─ 播放器控制（播放/暂停/自动续播）
-│   ├─ pipeline 预生成（最多领先 1~2 段）
-│   └─ 调用 audioEngine.js
+│   ├─ Smart Cleaner
+│   ├─ splitTextIntoChunks
+│   ├─ 播放控制
+│   ├─ pipeline 预生成
+│   └─ audioEngine.js
 │
 ├─ public/audioEngine.js
 │   ├─ IndexedDB 音频缓存
@@ -84,130 +234,365 @@ Browser (Frontend)
 Node Server
 │
 ├─ server.js
-│   ├─ OpenAI API：rewrite / translate（含 rewrite_cache.json）
-│   └─ Edge TTS 调用（tts_cache 文件校验）
+│   ├─ OpenAI Rewrite
+│   ├─ Translate
+│   └─ rewrite_cache.json
 │
 └─ Edge TTS
-   └─ tts_edge.py 生成 mp3
-
+   └─ tts_edge.py
 七、Pipeline 工作流程（核心）
+
 正确流程：
-生成 chunk1 → 播放 chunk1
-同时后台生成 chunk2 / chunk3
-播放 chunk2 的同时继续生成 chunk4…
 
-目标：播放器始终有音频缓冲区，避免“播完再等生成”。
+chunk1 → 播放
+同时生成 chunk2 / chunk3
+播放 chunk2 时生成 chunk4
 
+即：
+
+Streaming Pipeline
+
+目标：
+
+播放器始终有：
+
+音频缓冲区
+
+避免：
+
+播完等待生成
 八、Pipeline 并行规则（非常重要）
-播放 与 生成 必须并行。
-禁止：播放结束 → 再生成下一段。
-生成必须领先播放至少 1~2 段。
-AI 修改代码时禁止破坏该机制。
 
-九、Chunk 顺序规则（非常重要）
-即使后台生成顺序不同：播放顺序必须严格按 chunkIndex。
-禁止：按返回快慢来播放。
+播放 与 生成：
 
+必须并行
+
+禁止：
+
+播放结束
+↓
+再生成下一段
+
+正确：
+
+播放 chunk1
+↓
+生成 chunk2 / chunk3
+九、Chunk 顺序规则
+
+即使后台生成顺序不同：
+
+播放顺序必须：
+
+严格按 chunkIndex
+
+禁止：
+
+按返回速度播放
 十、Pipeline 并发限制
-最多同时生成 2 段（next / nextNext）。
-目的：控制 OpenAI 并发与 CPU，避免生成无用音频。
+
+最多：
+
+2 段
+
+即：
+
+next
+nextNext
+
+目的：
+
+控制 OpenAI 并发
+
+控制 CPU
+
+避免浪费生成
 
 十一、播放器缓存结构（前端）
-currentAudioUrl：当前播放
-nextAudioUrl：下一段
-nextNextAudioUrl：下下段
 
-播放结束：next → current；nextNext → next；再生成新的 nextNext。
+当前实现：
 
-十二、启动速度优化
-首段较小：≈ 400 字（更快出第一段）
-后续段：≈ 2200 字（整体效率更好）
+currentAudioUrl
+nextAudioUrl
+nextNextAudioUrl
 
-十三、音频缓存（前端）
+播放结束：
+
+next → current
+nextNext → next
+生成新的 nextNext
+十二、断点恢复机制（v7新增）
+
+系统会保存：
+
+text
+chunks
+currentIndex
+currentTime
+mode
+voice
+speed
+
+存储位置：
+
+localStorage
+
+恢复逻辑：
+
+刷新页面
+↓
+恢复 chunkIndex
+↓
+恢复段内时间 currentTime
+
+实现：
+
+restoreTime
+loadedmetadata → currentTime
+十三、启动速度优化
+
+首段：
+
+≈ 400 字
+
+后续：
+
+≈ 2200 字
+
+目的：
+
+更快启动
+整体效率更高
+十四、音频缓存（前端）
+
+使用：
+
 IndexedDB
-key：hash(text + mode + voice)
-命中：直接播放
-未命中：请求 /tts → 缓存 blob
 
-十四、改写缓存（后端）
+key：
+
+hash(text + mode + voice)
+
+命中：
+
+直接播放
+
+未命中：
+
+调用 /tts
+生成后写入缓存
+十五、改写缓存（后端）
+
+文件：
+
 rewrite_cache.json
-目的：避免重复调用 OpenAI。
 
-十五、缓存一致性规则
-任何缓存命中必须校验 size > 100 bytes
-否则删除并重新生成（避免空文件/坏缓存）。
+作用：
 
-十六、播放器状态机（原则）
-Idle → Generating → Playing → Finished / Interrupted
-任何错误不得导致“卡死”。
+避免重复调用 OpenAI
+十六、缓存一致性规则
 
-十七、任务隔离机制
-currentJobId：每次新任务 +1
-旧任务返回：jobId != currentJobId → 直接丢弃，避免串线。
+缓存命中必须：
 
-十八、任务中断机制
-AbortController + interruptPlayback()
-功能：停止播放 / abort 当前请求 / abort 预生成 / 清理 objectURL。
+size > 100 bytes
 
-十九、错误处理原则
-任何一段失败：不中断整体可控性
-最低兜底：能停止 / 能重试 / 能继续下一段（优先“不卡死”）。
+否则：
 
-二十、验证与日志（后端）
-每次 /tts 建议打印：
-- MODE
-- rewrite previous: NONE 或 last 60 chars
-- rewrite meta: role / chunk / previous
+删除并重新生成
 
-用于确认上下文衔接是否生效。
+避免：
 
-二十一、UI/交互规则（v6）
-1) 默认声线自动切换：
-- 选择 original → voice=young_female
-- 选择 story → voice=elder_male
+空文件
+损坏缓存
+十七、播放器状态机
+Idle
+↓
+Generating
+↓
+Playing
+↓
+Finished / Interrupted
 
-2) 播放/暂停合并为一个按钮：playPauseBtn（随播放状态切换文案）
+任何错误：
 
-3) 定时关闭（sleep timer）：到点后停止播放并终止预生成（走 interruptPlayback）
+不得导致卡死
+十八、任务隔离机制
 
-4) actions 行不换行：按钮与 sleepTimer 控件同一行展示（窄屏不掉到第二行）
+使用：
 
-二十二、进度条策略（当前）
-当前进度显示仍以“段落进度”为主（chunk 级）。
-播放器本身也提供时间进度条；后续是否移除段落进度，等试用后再定。
+currentJobId
+
+规则：
+
+新任务 +1
+
+旧任务返回：
+
+jobId != currentJobId
+
+直接丢弃。
+
+十九、任务中断机制
+
+使用：
+
+AbortController
+interruptPlayback()
+
+作用：
+
+停止播放
+停止生成
+停止预生成
+清理 objectURL
+
+触发场景：
+
+重新生成
+上传文件
+抓取URL
+二十、错误处理原则
+
+任何一段失败：
+
+不中断系统
+
+最低保证：
+
+能停止
+能重试
+不卡死
+二十一、UI / 交互规则
+默认声线
+original → young_female
+story → elder_male
+播放按钮
+playPauseBtn
+
+一个按钮控制：
+
+播放 / 暂停
+定时关闭
+
+选项：
+
+10 分钟
+30 分钟
+60 分钟
+播放完当前段
+
+实现：
+
+sleepTargetTime
+sleepMode=end
+二十二、进度条策略
+
+当前：
+
+chunk 进度
+
+播放器仍有：
+
+时间进度
+
+后续再评估。
 
 二十三、主要代码文件
-前端：public/app.js / public/audioEngine.js
-后端：server.js / tts_edge.py
-缓存：IndexedDB / rewrite_cache.json / tts_cache
 
+前端：
+
+public/app.js
+public/audioEngine.js
+
+后端：
+
+server.js
+tts_edge.py
+
+缓存：
+
+IndexedDB
+rewrite_cache.json
+tts_cache
 二十四、当前功能完成度
-已实现：AI 改写、Edge TTS、自动分段、pipeline 预生成、音频缓存、rewrite 缓存、PDF/Word 导入、URL 抓取、任务打断、播放恢复、默认声线、播放按钮合并、定时关闭、Smart Cleaner（电子书目录/元信息清理）
-完成度：≈ 88%
 
+已实现：
+
+AI Rewrite
+
+Edge TTS
+
+自动分段
+
+Streaming Pipeline
+
+音频缓存
+
+Rewrite Cache
+
+PDF / Word 导入
+
+URL 抓取
+
+任务中断
+
+断点恢复
+
+定时关闭
+
+Smart Cleaner
+
+完成度：
+
+≈ 90%
 二十五、当前最大瓶颈
-启动时间主要受：LLM rewrite latency（约 20~40 秒）影响。
 
-二十六、开发优先级（不变）
-稳定性 → 播放连续性 → 启动速度 → 功能扩展
+启动时间受：
 
+LLM Rewrite latency
+
+影响：
+
+20~40 秒
+二十六、开发优先级
+稳定性
+↓
+播放连续性
+↓
+启动速度
+↓
+功能扩展
 二十七、AI 修改代码规则（最终版）
-1) 必须提供完整可替换代码
-2) 不允许只给代码片段
-3) 不允许提出多种方案
-4) 用户是初学者
-5) 必须一步一步修改
+
+1️⃣ 必须提供完整代码
+2️⃣ 不允许代码片段
+3️⃣ 不允许多个方案
+4️⃣ 用户是初学者
+5️⃣ 必须一步一步修改
 
 二十八、前端缓存规则（非常重要）
-浏览器（尤其是手机 Safari）会强缓存 JS 和 CSS。
-如果前端代码更新而没有改变文件 URL，用户可能仍然加载旧版本。
 
-因此：每次更新前端代码时，必须更新资源版本号。
+浏览器（尤其：
+
+iOS Safari
+
+）会强缓存 JS。
+
+因此：
+
+每次前端更新必须：
+
+修改资源版本号
 
 示例：
-<script src="/app.js?v=20260305"></script>
-<link rel="stylesheet" href="/style.css?v=20260305">
 
-更新部署时：v=20260305 → v=20260306
-规则：每次前端更新必须修改版本号（推荐使用日期版本号）
-目的：避免手机缓存旧代码，确保用户加载最新 JS / CSS
+app.js?v=20260305
+style.css?v=20260305
+
+部署更新：
+
+20260305 → 20260306
+
+目的：
+
+防止用户加载旧 JS
