@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260310-2';
+import { generateAudioFromText } from './audioEngine.js?v=20260310-3';
 import { saveProgress, loadProgress } from './storage.js';
 
 const textInput = document.getElementById("textInput");
@@ -303,6 +303,8 @@ function interruptPlayback(reason = "") {
     try { nextAbort.abort(); } catch {}
     nextAbort = null;
   }
+
+  // ✅ 修复：中断时重置 preGeneratingIndex
   preGeneratingIndex = -1;
 
   if (nextAudioUrl) {
@@ -400,6 +402,7 @@ async function playChunk(index, jobId) {
   });
 
   try {
+    // ✅ 修复：playChunk 只预生成 index+1
     preGenerateNext(index + 1, jobId);
     await audioPlayer.play();
   } catch (e) {
@@ -416,6 +419,7 @@ async function preGenerateNext(index, jobId) {
   if (index >= chunks.length) return;
   if (preGeneratingIndex === index) return;
   preGeneratingIndex = index;
+
   const mode = modeSelect?.value || "original";
   const voice = voiceSelect?.value || "young_female";
 
@@ -435,6 +439,8 @@ async function preGenerateNext(index, jobId) {
       chunks.length
     );
 
+    if (jobId !== currentJobId) return;
+
     const url = result.url;
     const rewrittenText = result.rewritten;
 
@@ -442,26 +448,20 @@ async function preGenerateNext(index, jobId) {
       rewrittenChunks[index] = rewrittenText;
     }
 
-    if (jobId !== currentJobId) return;
-
+    // ✅ 修复：填槽逻辑，填完后只继续预生成 index+1，不重复
     if (!nextAudioUrl) {
-      if (jobId !== currentJobId) return;
       nextAudioUrl = url;
+      // 继续预生成下一段
+      preGeneratingIndex = -1;
       preGenerateNext(index + 1, jobId);
-      return;
-    }
-
-    if (!nextNextAudioUrl) {
-      if (jobId !== currentJobId) return;
+    } else if (!nextNextAudioUrl) {
       nextNextAudioUrl = url;
-      setTimeout(() => {
-        preGenerateNext(index + 1, jobId);
-      }, 100);
-      return;
+      // nextNext 已满，停止预生成，等 ended 事件推进
     }
 
   } catch (e) {
     if (e?.name === "AbortError") return;
+    console.log("preGenerateNext error:", e);
   }
 }
 
@@ -756,8 +756,10 @@ audioPlayer?.addEventListener("ended", async function () {
 
     await audioPlayer.play();
 
-    const startIdx = nextAudioUrl ? (currentIndex + 2) : (currentIndex + 1);
-    preGenerateNext(startIdx, currentJobId);
+    // ✅ 修复：重置后只触发一次预生成，填满空槽
+    const nextSlotIndex = nextAudioUrl ? (currentIndex + 2) : (currentIndex + 1);
+    preGeneratingIndex = -1;
+    preGenerateNext(nextSlotIndex, currentJobId);
 
     return;
   }
