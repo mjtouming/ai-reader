@@ -1,67 +1,69 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260310-5';
+import { generateAudioFromText } from './audioEngine.js?v=20260310-6';
 import { saveProgress, loadProgress } from './storage.js';
 
-const textInput = document.getElementById("textInput");
+// ── DOM refs ──────────────────────────────────────────────────
+const textInput   = document.getElementById("textInput");
 const generateBtn = document.getElementById("generateBtn");
 const audioPlayer = document.getElementById("audioPlayer");
-const fileInput = document.getElementById("fileInput");
-const modeSelect = document.getElementById("modeSelect");
-const statusText = document.getElementById("statusText");
+const fileInput   = document.getElementById("fileInput");
+const modeSelect  = document.getElementById("modeSelect");
+const statusText  = document.getElementById("statusText");
 const speedSelect = document.getElementById("speedSelect");
 const voiceSelect = document.getElementById("voiceSelect");
-modeSelect.addEventListener("change", () => {
-
-  if (modeSelect.value === "original") {
-    voiceSelect.value = "young_female";
-  }
-
-  if (modeSelect.value === "story") {
-    voiceSelect.value = "elder_male";
-  }
-
-});
-const urlInput = document.getElementById("urlInput");
+const urlInput    = document.getElementById("urlInput");
 const fetchUrlBtn = document.getElementById("fetchUrlBtn");
-
 const progressBar = document.getElementById("progressBar");
-const progressLabel = document.getElementById("progressLabel");
-const sleepTimer = document.getElementById("sleepTimer");
+const chunkNav    = document.getElementById("chunkNav");
+const sleepTimer  = document.getElementById("sleepTimer");
 
-let chunks = [];
-let rewrittenChunks = [];
-let currentIndex = 0;
-let isAutoPlaying = false;
-let sleepTimerId = null;
-let sleepMode = null;
-let restoreTime = 0;
+modeSelect.addEventListener("change", () => {
+  if (modeSelect.value === "original") voiceSelect.value = "young_female";
+  if (modeSelect.value === "story")    voiceSelect.value = "elder_male";
+});
 
-let currentAbort = null;
-let currentJobId = 0;
-let currentAudioUrl = null;
-let nextAudioUrl = null;
-let nextAbort = null;
+// ── State ─────────────────────────────────────────────────────
+let chunks           = [];
+let rewrittenChunks  = [];
+let currentIndex     = 0;
+let maxReachedIndex  = -1;
+let isAutoPlaying    = false;
+let sleepMode        = null;
+let sleepTargetTime  = null;
+let restoreTime      = 0;
+let currentAbort     = null;
+let currentJobId     = 0;
+let currentAudioUrl  = null;
+let currentFileName  = null;
+let nextAudioUrl     = null;
+let nextAbort        = null;
 let nextNextAudioUrl = null;
 let preGeneratingIndex = -1;
-const SESSION_KEY = "ai_reader_session_v1";
+let lastSessionSave  = 0;
 
+// ── Keys ──────────────────────────────────────────────────────
+const SESSION_KEY = "ai_reader_session_v1";
+const SHELF_KEY   = "ai_reader_shelf_v1";
+let currentBookId = null;
+
+// ── Session ───────────────────────────────────────────────────
 function saveSession(patch = {}) {
   try {
     const prev = loadSession() || {};
-
     const data = {
       ...prev,
       text: textInput?.value || "",
       chunks,
       currentIndex,
+      maxReachedIndex,
       currentTime: audioPlayer?.currentTime || 0,
-      mode: modeSelect?.value || "original",
+      mode:  modeSelect?.value  || "original",
       voice: voiceSelect?.value || "young_female",
       speed: speedSelect?.value || "1",
       ...patch,
       updatedAt: Date.now()
     };
-
     localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    updateShelfProgress();
   } catch (e) {
     console.log("saveSession error:", e);
   }
@@ -76,29 +78,285 @@ function loadSession() {
   }
 }
 
+// ── 书架 (Shelf) ──────────────────────────────────────────────
+function loadShelf() {
+  try {
+    const raw = localStorage.getItem(SHELF_KEY);
+    return raw ? JSON.parse(raw) : { books: [], currentBookId: null };
+  } catch { return { books: [], currentBookId: null }; }
+}
+
+function saveShelf(shelf) {
+  try { localStorage.setItem(SHELF_KEY, JSON.stringify(shelf)); } catch {}
+}
+
+function hashText(text) {
+  // djb2-like hash of first 500 chars for book identity
+  let h = 5381;
+  for (let i = 0; i < Math.min(text.length, 500); i++) {
+    h = ((h << 5) + h) + text.charCodeAt(i);
+    h = h & h;
+  }
+  return Math.abs(h).toString(36);
+}
+
+function deriveTitle() {
+  if (currentFileName) return currentFileName;
+  const today = new Date().toISOString().slice(0, 10);
+  return `未命名书籍 ${today}`;
+}
+
+function saveToShelf() {
+  const text = textInput?.value?.trim() || "";
+  if (!text || !chunks.length) return;
+
+  const id    = hashText(text);
+  const shelf = loadShelf();
+  const existing = shelf.books.find(b => b.id === id);
+
+  if (!existing && shelf.books.length >= 10) {
+    alert("书架已满（最多 10 本），请打开书架删除旧书再继续");
+    return;
+  }
+
+  const book = {
+    id,
+    title:       deriveTitle(),
+    fileName:    currentFileName || null,
+    text,
+    totalChunks: chunks.length,
+    currentIndex,
+    maxReachedIndex,
+    currentTime: audioPlayer?.currentTime || 0,
+    mode:  modeSelect?.value  || "original",
+    voice: voiceSelect?.value || "young_female",
+    speed: speedSelect?.value || "1",
+    addedAt:   existing?.addedAt || Date.now(),
+    updatedAt: Date.now()
+  };
+
+  if (existing) {
+    Object.assign(existing, book);
+  } else {
+    shelf.books.unshift(book);
+  }
+
+  currentBookId       = id;
+  shelf.currentBookId = id;
+  saveShelf(shelf);
+}
+
+function updateShelfProgress() {
+  if (!currentBookId || !chunks.length) return;
+  const shelf = loadShelf();
+  const book  = shelf.books.find(b => b.id === currentBookId);
+  if (!book) return;
+  book.currentIndex    = currentIndex;
+  book.maxReachedIndex = maxReachedIndex;
+  book.currentTime     = audioPlayer?.currentTime || 0;
+  book.totalChunks     = chunks.length;
+  book.updatedAt       = Date.now();
+  saveShelf(shelf);
+}
+
+function loadBook(book) {
+  interruptPlayback();
+  textInput.value   = book.text;
+  modeSelect.value  = book.mode  || "original";
+  voiceSelect.value = book.voice || "young_female";
+  speedSelect.value = book.speed || "1";
+
+  // Re-split with same algorithm as generateBtn
+  const firstParts = splitTextIntoChunks(book.text, { maxLen: 420, minLen: 200 });
+  if (firstParts.length > 1) {
+    const first     = firstParts.shift();
+    const restText  = firstParts.join("\n\n");
+    const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
+    chunks = [first, ...restParts];
+  } else {
+    chunks = firstParts;
+  }
+
+  rewrittenChunks = [];
+  currentIndex    = Math.min(book.currentIndex || 0, Math.max(0, chunks.length - 1));
+  maxReachedIndex = book.maxReachedIndex ?? currentIndex;
+  restoreTime     = book.currentTime || 0;
+  currentBookId   = book.id;
+
+  saveSession({ chunks, currentIndex, maxReachedIndex });
+  renderChunkNav();
+  setStatus(
+    `已切换：${book.title}（第 ${currentIndex + 1}/${chunks.length} 段）`,
+    "ok",
+    { step: currentIndex + 1, total: chunks.length }
+  );
+}
+
+function deleteBook(id) {
+  const shelf = loadShelf();
+  shelf.books = shelf.books.filter(b => b.id !== id);
+  if (shelf.currentBookId === id) shelf.currentBookId = null;
+  saveShelf(shelf);
+  if (currentBookId === id) currentBookId = null;
+}
+
+function renderShelf() {
+  const list = document.getElementById("bookList");
+  if (!list) return;
+  const shelf = loadShelf();
+
+  if (!shelf.books.length) {
+    list.innerHTML = '<div style="padding:28px 20px;color:rgba(15,23,42,.4);font-size:14px;text-align:center;">书架还是空的，添加第一本书吧 📖</div>';
+    return;
+  }
+
+  list.innerHTML = "";
+  shelf.books.forEach(book => {
+    const item = document.createElement("div");
+    item.className = "book-item" + (book.id === shelf.currentBookId ? " active" : "");
+
+    const info = document.createElement("div");
+    info.className = "book-info";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "book-title";
+    titleEl.textContent = book.title;
+
+    const progressEl = document.createElement("div");
+    progressEl.className = "book-progress";
+    const modeLabel = book.mode === "story" ? "故事" : book.mode === "translate" ? "翻译" : "原文";
+    progressEl.textContent = `第 ${(book.currentIndex || 0) + 1}/${book.totalChunks || "?"} 段 · ${modeLabel}`;
+
+    info.appendChild(titleEl);
+    info.appendChild(progressEl);
+
+    const del = document.createElement("button");
+    del.className = "book-delete";
+    del.textContent = "✕";
+    del.title = "删除";
+    del.addEventListener("click", e => {
+      e.stopPropagation();
+      if (confirm(`确定删除"${book.title}"？`)) {
+        deleteBook(book.id);
+        renderShelf();
+      }
+    });
+
+    item.appendChild(info);
+    item.appendChild(del);
+    item.addEventListener("click", () => { loadBook(book); closeSheet(); });
+    list.appendChild(item);
+  });
+}
+
+function openSheet() {
+  renderShelf();
+  document.getElementById("sheetOverlay")?.classList.add("open");
+  document.getElementById("sheetDrawer")?.classList.add("open");
+}
+
+function closeSheet() {
+  document.getElementById("sheetOverlay")?.classList.remove("open");
+  document.getElementById("sheetDrawer")?.classList.remove("open");
+}
+
+function clearForNewBook() {
+  interruptPlayback("准备添加新书");
+  textInput.value = "";
+  chunks          = [];
+  rewrittenChunks = [];
+  currentIndex    = 0;
+  maxReachedIndex = -1;
+  currentBookId   = null;
+  currentFileName = null;
+  renderChunkNav();
+  setStatus("请粘贴文字或上传文件", "info");
+  closeSheet();
+}
+
+// ── 段落导航 ──────────────────────────────────────────────────
+function renderChunkNav() {
+  if (!chunkNav) return;
+  if (!chunks.length) { chunkNav.innerHTML = ""; return; }
+
+  const sel = document.createElement("select");
+  sel.className = "chunk-select";
+
+  for (let i = 0; i < chunks.length; i++) {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = i === currentIndex ? `▶ 第 ${i + 1} 段` : `第 ${i + 1} 段`;
+    if (i > maxReachedIndex) opt.disabled = true;
+    if (i === currentIndex)  opt.selected = true;
+    sel.appendChild(opt);
+  }
+
+  sel.addEventListener("change", function () {
+    const idx = parseInt(this.value, 10);
+    if (!isNaN(idx) && idx !== currentIndex) jumpToChunk(idx);
+  });
+
+  chunkNav.innerHTML = "";
+  chunkNav.appendChild(sel);
+}
+
+async function jumpToChunk(index) {
+  interruptPlayback();
+  currentIndex  = index;
+  currentJobId += 1;
+  const jobId   = currentJobId;
+  isAutoPlaying = true;
+  renderChunkNav();
+  saveSession({ currentIndex });
+  try {
+    await playChunk(currentIndex, jobId);
+  } catch (e) {
+    if (e?.name === "AbortError") return;
+    setStatus("跳转失败 ❌", "bad", { busy: false });
+    isAutoPlaying = false;
+  }
+}
+
+// ── UI helpers ────────────────────────────────────────────────
 function setStatus(text, type = "info", opts = {}) {
   if (!statusText) return;
 
-  statusText.innerText = text;
+  statusText.classList.remove("ok", "bad", "info", "loading");
 
-  statusText.classList.remove("ok", "bad", "info");
-  if (type === "ok") statusText.classList.add("ok");
-  else if (type === "bad") statusText.classList.add("bad");
-  else statusText.classList.add("info");
+  if (opts.loading) {
+    const wrap = document.createElement("span");
+    wrap.className = "status-loading-wrap";
+
+    const icon = document.createElement("span");
+    icon.className = "loading-icon";
+    icon.textContent = "❄";
+
+    const textSpan = document.createElement("span");
+    textSpan.className = "status-text";
+    textSpan.textContent = text;
+
+    wrap.appendChild(icon);
+    wrap.appendChild(textSpan);
+    statusText.innerHTML = "";
+    statusText.appendChild(wrap);
+    statusText.classList.add("info", "loading");
+  } else {
+    statusText.textContent = text;
+    if (type === "ok")       statusText.classList.add("ok");
+    else if (type === "bad") statusText.classList.add("bad");
+    else                     statusText.classList.add("info");
+  }
 
   if (generateBtn && typeof opts.busy === "boolean") {
     generateBtn.disabled = false;
   }
-
   if (progressBar && opts.total != null) {
-    progressBar.max = opts.total;
+    progressBar.max   = opts.total;
     progressBar.value = opts.step ?? 0;
-  }
-  if (progressLabel && opts.total != null) {
-    progressLabel.innerText = `${opts.step ?? 0}/${opts.total}`;
   }
 }
 
+// ── Text processing ───────────────────────────────────────────
 function splitTextIntoChunks(text, opts = {}) {
   const { maxLen = 2200, minLen = 800 } = opts;
 
@@ -291,6 +549,7 @@ function cleanBookTextForReading(rawText) {
     .trim();
 }
 
+// ── Playback core ─────────────────────────────────────────────
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
 
@@ -304,7 +563,6 @@ function interruptPlayback(reason = "") {
     nextAbort = null;
   }
 
-  // ✅ 修复：中断时重置 preGeneratingIndex
   preGeneratingIndex = -1;
 
   if (nextAudioUrl) {
@@ -332,12 +590,13 @@ function interruptPlayback(reason = "") {
 }
 
 async function playChunk(index, jobId) {
-  const mode = modeSelect?.value || "original";
+  const mode  = modeSelect?.value  || "original";
   const total = chunks.length;
   const voice = voiceSelect?.value || "young_female";
 
   setStatus(`正在生成第 ${index + 1}/${total} 段...`, "info", {
     busy: true,
+    loading: true,
     step: index + 1,
     total
   });
@@ -367,7 +626,7 @@ async function playChunk(index, jobId) {
     throw e;
   }
 
-  const audioUrl = result.url;
+  const audioUrl      = result.url;
   const rewrittenText = result.rewritten;
 
   if (jobId !== currentJobId) return;
@@ -395,14 +654,17 @@ async function playChunk(index, jobId) {
     }, { once: true });
   }
 
-  setStatus(`播放第 ${index + 1}/${total} 段（${mode} / ${voice}）`, "ok", {
+  // Update max reached and nav
+  maxReachedIndex = Math.max(maxReachedIndex, index);
+  renderChunkNav();
+
+  setStatus(`播放第 ${index + 1}/${total} 段`, "ok", {
     busy: true,
     step: index + 1,
     total
   });
 
   try {
-    // ✅ 修复：playChunk 只预生成 index+1
     preGenerateNext(index + 1, jobId);
     await audioPlayer.play();
   } catch (e) {
@@ -423,7 +685,7 @@ async function preGenerateNext(index, jobId) {
   if (preGeneratingIndex === index) return;
   preGeneratingIndex = index;
 
-  const mode = modeSelect?.value || "original";
+  const mode  = modeSelect?.value  || "original";
   const voice = voiceSelect?.value || "young_female";
 
   const abort = new AbortController();
@@ -444,7 +706,7 @@ async function preGenerateNext(index, jobId) {
 
     if (jobId !== currentJobId) return;
 
-    const url = result.url;
+    const url           = result.url;
     const rewrittenText = result.rewritten;
 
     if (!rewrittenChunks[index] && rewrittenText) {
@@ -456,7 +718,7 @@ async function preGenerateNext(index, jobId) {
     } else if (!nextNextAudioUrl) {
       nextNextAudioUrl = url;
     }
-    // 不在这里递归，由 ended 事件统一驱动
+    // ended 事件统一驱动，不在这里递归
 
   } catch (e) {
     if (e?.name === "AbortError") return;
@@ -464,6 +726,7 @@ async function preGenerateNext(index, jobId) {
   }
 }
 
+// ── File upload ───────────────────────────────────────────────
 fileInput?.addEventListener("change", async function () {
   const file = fileInput.files[0];
   if (!file) return;
@@ -474,6 +737,7 @@ fileInput?.addEventListener("change", async function () {
     const reader = new FileReader();
     reader.onload = function (e) {
       textInput.value = e.target.result;
+      currentFileName = file.name.replace(/\.[^.]+$/, "");
       setStatus("TXT 已载入 ✅", "ok");
     };
     reader.readAsText(file);
@@ -494,7 +758,7 @@ fileInput?.addEventListener("change", async function () {
 
       const data = await response.json();
       textInput.value = data.text || "";
-
+      currentFileName = file.name.replace(/\.[^.]+$/, "");
       setStatus("PDF 已载入 ✅", "ok", { busy: false });
     } catch (error) {
       console.error(error);
@@ -517,6 +781,7 @@ fileInput?.addEventListener("change", async function () {
 
       const data = await response.json();
       textInput.value = data.text || "";
+      currentFileName = file.name.replace(/\.[^.]+$/, "");
       setStatus("Word 已载入 ✅", "ok", { busy: false });
     } catch (error) {
       console.error(error);
@@ -528,7 +793,7 @@ fileInput?.addEventListener("change", async function () {
   setStatus("暂不支持该文件类型", "bad", { busy: false });
 });
 
-// ✅ 生成音频（可随时打断）
+// ── Generate ──────────────────────────────────────────────────
 generateBtn?.addEventListener("click", async function () {
   let text = textInput.value.trim();
   if (!text) {
@@ -536,7 +801,7 @@ generateBtn?.addEventListener("click", async function () {
     return;
   }
 
-  // ✅ 识别 YouTube 链接，自动提取字幕
+  // 识别 YouTube 链接，自动提取字幕
   const isYouTube = /youtube\.com\/watch|youtu\.be\//.test(text);
   if (isYouTube) {
     setStatus("正在提取 YouTube 字幕...", "info", { busy: true });
@@ -550,7 +815,7 @@ generateBtn?.addEventListener("click", async function () {
       if (!response.ok) throw new Error(data.error || "失败");
       textInput.value = data.text || "";
       text = textInput.value;
-      modeSelect.value = "translate";
+      modeSelect.value  = "translate";
       voiceSelect.value = "young_female";
       setStatus("字幕已提取，准备生成...", "info");
     } catch (error) {
@@ -560,17 +825,17 @@ generateBtn?.addEventListener("click", async function () {
     }
   }
 
-  // ✅ 分段前清理电子书开头目录/元信息
+  // 分段前清理电子书开头目录/元信息
   const cleaned = cleanBookTextForReading(text);
   if (cleaned && cleaned.trim().length > 0) {
     text = cleaned;
     textInput.value = cleaned;
   }
 
-  // 1) 立刻打断上一轮
+  // 1) 打断上一轮
   interruptPlayback("已打断，按当前设置重新生成…");
 
-  // 2) 新开一轮任务 id
+  // 2) 新任务 id
   currentJobId += 1;
   const jobId = currentJobId;
 
@@ -578,7 +843,7 @@ generateBtn?.addEventListener("click", async function () {
   const firstParts = splitTextIntoChunks(text, { maxLen: 420, minLen: 200 });
 
   if (firstParts.length > 1) {
-    const first = firstParts.shift();
+    const first    = firstParts.shift();
     const restText = firstParts.join("\n\n");
     const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
     chunks = [first, ...restParts];
@@ -586,10 +851,13 @@ generateBtn?.addEventListener("click", async function () {
     chunks = firstParts;
   }
 
-  currentIndex = 0;
+  currentIndex    = 0;
+  maxReachedIndex = -1;
   rewrittenChunks = [];
 
-  saveSession({ chunks, currentIndex });
+  saveSession({ chunks, currentIndex, maxReachedIndex });
+  saveToShelf();
+  renderChunkNav();
 
   isAutoPlaying = true;
 
@@ -611,6 +879,7 @@ generateBtn?.addEventListener("click", async function () {
   }
 });
 
+// ── Play / Pause ──────────────────────────────────────────────
 const playPauseBtn = document.getElementById("playPauseBtn");
 
 playPauseBtn?.addEventListener("click", async function () {
@@ -643,8 +912,7 @@ playPauseBtn?.addEventListener("click", async function () {
 
 });
 
-let lastSessionSave = 0;
-
+// ── Audio events ──────────────────────────────────────────────
 audioPlayer?.addEventListener("timeupdate", function () {
 
   if (sleepTargetTime && Date.now() >= sleepTargetTime) {
@@ -671,44 +939,6 @@ audioPlayer?.addEventListener("pause", () => {
   if (playPauseBtn) playPauseBtn.innerText = "▶️ 播放";
 });
 
-window.addEventListener("load", function () {
-
-  const session = loadSession();
-  if (!session) return;
-
-  try {
-    textInput.value = session.text || "";
-    chunks = session.chunks || [];
-    currentIndex = session.currentIndex || 0;
-    modeSelect.value = session.mode || "original";
-    voiceSelect.value = session.voice || "young_female";
-    speedSelect.value = session.speed || "1";
-
-    if (session.currentTime != null) {
-      restoreTime = session.currentTime;
-    }
-
-    if (chunks.length > 0) {
-      isAutoPlaying = false;
-      setStatus(
-        `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
-        "ok",
-        {
-          step: currentIndex,
-          total: chunks.length
-        }
-      );
-    }
-  } catch (e) {
-    console.log("恢复 session 失败", e);
-  }
-
-});
-
-speedSelect?.addEventListener("change", function () {
-  audioPlayer.playbackRate = parseFloat(speedSelect.value);
-});
-
 audioPlayer?.addEventListener("ended", async function () {
 
   if (sleepMode === "end") {
@@ -729,13 +959,17 @@ audioPlayer?.addEventListener("ended", async function () {
       try { URL.revokeObjectURL(currentAudioUrl); } catch {}
     }
 
-    nextAudioUrl = nextNextAudioUrl;
+    nextAudioUrl     = nextNextAudioUrl;
     nextNextAudioUrl = null;
-    currentAudioUrl = url;
+    currentAudioUrl  = url;
 
     audioPlayer.src = url;
     audioPlayer.currentTime = 0;
     audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
+
+    // Update max reached and nav
+    maxReachedIndex = Math.max(maxReachedIndex, currentIndex);
+    renderChunkNav();
 
     setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
       busy: true,
@@ -777,46 +1011,59 @@ audioPlayer?.addEventListener("ended", async function () {
   }
 });
 
-window.addEventListener("DOMContentLoaded", () => {
-  const hasVisited = localStorage.getItem("ai_reader_visited");
+// ── Session restore ───────────────────────────────────────────
+window.addEventListener("load", function () {
 
-  if (!hasVisited) {
-    const defaultText = `
-臣亮言：先帝创业未半而中道崩殂。今天下三分，益州疲弊，此诚危急存亡之秋也。
-然侍卫之臣不懈于内，忠志之士忘身于外者，盖追先帝之殊遇，欲报之于陛下也。
-诚宜开张圣听，以光先帝遗德，恢弘志士之气，不宜妄自菲薄，引喻失义，以塞忠谏之路也。
-`;
+  const session = loadSession();
+  if (!session) return;
 
-    textInput.value = defaultText.trim();
-    modeSelect.value = "story";
-    voiceSelect.value = "elder_male";
-
-    setTimeout(async () => {
   try {
-    await generateBtn.click();
+    textInput.value   = session.text || "";
+    chunks            = session.chunks || [];
+    currentIndex      = session.currentIndex || 0;
+    maxReachedIndex   = session.maxReachedIndex ?? currentIndex;
+    modeSelect.value  = session.mode  || "original";
+    voiceSelect.value = session.voice || "young_female";
+    speedSelect.value = session.speed || "1";
+
+    if (session.currentTime != null) {
+      restoreTime = session.currentTime;
+    }
+
+    // Restore current book id from shelf
+    const shelf = loadShelf();
+    currentBookId = shelf.currentBookId || null;
+
+    if (chunks.length > 0) {
+      isAutoPlaying = false;
+      renderChunkNav();
+      setStatus(
+        `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
+        "ok",
+        {
+          step:  currentIndex,
+          total: chunks.length
+        }
+      );
+    }
   } catch (e) {
-    console.log("首次自动生成失败:", e);
-    setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
-    isAutoPlaying = false;
+    console.log("恢复 session 失败", e);
   }
-}, 800);
 
-    localStorage.setItem("ai_reader_visited", "1");
-
-  } else {
-    modeSelect.value = "original";
-    voiceSelect.value = "young_female";
-  }
 });
 
-let sleepTargetTime = null;
+// ── Speed change ──────────────────────────────────────────────
+speedSelect?.addEventListener("change", function () {
+  audioPlayer.playbackRate = parseFloat(speedSelect.value);
+});
 
+// ── Sleep timer ───────────────────────────────────────────────
 sleepTimer?.addEventListener("change", function () {
 
   const value = sleepTimer.value;
 
-  sleepMode = null;
-  sleepTargetTime = null;
+  sleepMode        = null;
+  sleepTargetTime  = null;
 
   if (value === "0") {
     setStatus("定时关闭已取消", "info");
@@ -833,4 +1080,42 @@ sleepTimer?.addEventListener("change", function () {
   sleepTargetTime = Date.now() + seconds * 1000;
   setStatus(`已设置 ${seconds / 60} 分钟后关闭`, "info");
 
+});
+
+// ── Shelf UI events ───────────────────────────────────────────
+document.getElementById("shelfBtn")?.addEventListener("click", openSheet);
+document.getElementById("sheetOverlay")?.addEventListener("click", closeSheet);
+document.getElementById("addBookBtn")?.addEventListener("click", clearForNewBook);
+
+// ── First visit ───────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  const hasVisited = localStorage.getItem("ai_reader_visited");
+
+  if (!hasVisited) {
+    const defaultText = `
+臣亮言：先帝创业未半而中道崩殂。今天下三分，益州疲弊，此诚危急存亡之秋也。
+然侍卫之臣不懈于内，忠志之士忘身于外者，盖追先帝之殊遇，欲报之于陛下也。
+诚宜开张圣听，以光先帝遗德，恢弘志士之气，不宜妄自菲薄，引喻失义，以塞忠谏之路也。
+`;
+
+    textInput.value   = defaultText.trim();
+    modeSelect.value  = "story";
+    voiceSelect.value = "elder_male";
+
+    setTimeout(async () => {
+      try {
+        await generateBtn.click();
+      } catch (e) {
+        console.log("首次自动生成失败:", e);
+        setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
+        isAutoPlaying = false;
+      }
+    }, 800);
+
+    localStorage.setItem("ai_reader_visited", "1");
+
+  } else {
+    modeSelect.value  = "original";
+    voiceSelect.value = "young_female";
+  }
 });

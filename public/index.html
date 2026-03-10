@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>AI Reader</title>
   <!-- TEST123 -->
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/misans@4.0.0/lib/Normal/MiSans-Normal.min.css">
+  <link rel="stylesheet" href="style.css?v=20260310-8" />
 </head>
 
 <body>
@@ -20,6 +21,7 @@
             <p class="sub">告别机械声，古文/外语自动翻译</p>
           </div>
         </div>
+        <button id="shelfBtn" class="shelf-btn" title="书架">📚</button>
       </header>
 
  <!-- 卡片 1：模式 + 朗读者 + 语速 -->
@@ -27,7 +29,7 @@
   <div class="grid3">
     <div class="field modeField">
       <label for="modeSelect">朗读模式</label>
-      <select id="modeSelect">
+      <select id="modeSelect" class="chunk-select">
         <option value="original">原文朗读</option>
         <option value="story" selected>改成故事（更口语，有趣）</option>
         <option value="translate">翻译为白话/中文</option>
@@ -36,7 +38,7 @@
 
     <div class="field voiceField">
       <label for="voiceSelect">朗读者</label>
-      <select id="voiceSelect">
+      <select id="voiceSelect" class="chunk-select">
   <option value="young_female">青年女</option>
   <option value="girl">少女</option>
   <option value="young_male">青年男</option>
@@ -46,7 +48,7 @@
 
     <div class="field speedField">
       <label for="speedSelect">语速</label>
-      <select id="speedSelect">
+      <select id="speedSelect" class="chunk-select">
         <option value="0.8">0.8x</option>
         <option value="1" selected>1x</option>
         <option value="1.2">1.2x</option>
@@ -59,7 +61,7 @@
 <!-- 卡片 4：正文 + 操作 -->
       <section class="card">
         <div class="card-hd">
-          <div class="card-title">文本内容</div>
+          <div class="card-title">输入文字 / YouTube 链接</div>
         </div>
 
         <label class="sr-only" for="textInput">正文</label>
@@ -72,7 +74,7 @@
           ▶ 播放
           </button>
 
-         <select id="sleepTimer" class="sleep-select">
+         <select id="sleepTimer" class="sleep-select chunk-select">
             <option value="0">定时关闭</option>
             <option value="600">10 分钟</option>
             <option value="1800">30 分钟</option>
@@ -83,9 +85,8 @@
 
        <div class="progress">
   <progress id="progressBar" value="0" max="100"></progress>
-
-  <div class="progress-info">
-    <div id="progressLabel" class="muted">0/0</div>
+  <div class="progress-row">
+    <div id="chunkNav" class="chunk-nav"></div>
     <div id="statusText" class="status info">就绪</div>
   </div>
 </div>
@@ -106,6 +107,17 @@
 
       <div class="spacer"></div>
 
+    <!-- 书架底部抽屉 -->
+    <div id="sheetOverlay" class="sheet-overlay"></div>
+    <div id="sheetDrawer" class="sheet-drawer">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">书架</div>
+      <div id="bookList" class="book-list"></div>
+      <div class="sheet-footer">
+        <button id="addBookBtn" class="sheet-add-btn">＋ 添加新书</button>
+      </div>
+    </div>
+
     <!-- 底部播放器 -->
     <footer class="playerbar">
       <div class="wrap player-inner">
@@ -115,7 +127,7 @@
     </footer>
   </div>
 
- <script type="module" src="./app.js?v=20260310-4"></script>
- 
+ <script type="module" src="./app.js?v=20260310-6"></script>
+
 </body>
 </html>
