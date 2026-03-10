@@ -3,3 +3,4 @@ node_modules/
 .venv/
 tts_cache/
 uploads/
+rewrite_cache.json
