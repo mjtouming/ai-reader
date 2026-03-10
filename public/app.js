@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260310-4';
+import { generateAudioFromText } from './audioEngine.js?v=20260310-5';
 import { saveProgress, loadProgress } from './storage.js';
 
 const textInput = document.getElementById("textInput");
@@ -411,7 +411,10 @@ async function playChunk(index, jobId) {
       console.log("实际已播放，忽略错误");
       return;
     }
-    throw e;
+    // Safari 自动播放被拦截，提示用户手动点击
+    setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
+    isAutoPlaying = false;
+    return;
   }
 }
 
