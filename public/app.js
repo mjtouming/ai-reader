@@ -789,13 +789,14 @@ window.addEventListener("DOMContentLoaded", () => {
     voiceSelect.value = "elder_male";
 
     setTimeout(async () => {
-      try {
-        await generateBtn.click();
-        setStatus("已生成，点击播放 ▶️", "ok");
-      } catch (e) {
-        console.log("首次自动生成失败:", e);
-      }
-    }, 800);
+  try {
+    await generateBtn.click();
+  } catch (e) {
+    console.log("首次自动生成失败:", e);
+    setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
+    isAutoPlaying = false;
+  }
+}, 800);
 
     localStorage.setItem("ai_reader_visited", "1");
 

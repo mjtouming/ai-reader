@@ -9,9 +9,9 @@ const mammoth = require("mammoth");
 const pdfParse = require("pdf-parse");
 const fs = require("fs");
 const path = require("path");
-const { spawn, execFile } = require("child_process"); // ✅ 新增 execFile
+const { spawn, execFile } = require("child_process");
 const crypto = require("crypto");
-const os = require("os"); // ✅ 新增 os
+const os = require("os");
 
 // ===== rewrite cache =====
 const rewriteCachePath = path.join(__dirname, "rewrite_cache.json");
@@ -25,20 +25,16 @@ if (fs.existsSync(rewriteCachePath)) {
   }
 }
 
-// Node18+ 才有 global.fetch；低版本会是 undefined
 const fetch = global.fetch;
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-// ===== 静态文件 =====
+
 const publicPath = path.join(__dirname, "public");
-
 console.log("Static path:", publicPath);
-
 app.use(express.static(publicPath));
 
-// Railway 有时会把根路由交给 server，需要手动返回 index.html
 app.get("/", (req, res) => {
   res.sendFile(path.join(publicPath, "index.html"));
 });
@@ -51,7 +47,6 @@ function runEdgeTTS({ inputText, voiceKey, outFile }) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, "tts_edge.py");
 
-    // ✅ Python 路径：mac/linux
     let pythonPath =
       process.env.PYTHON_PATH ||
       (fs.existsSync(path.join(__dirname, ".venv", "bin", "python"))
@@ -77,7 +72,6 @@ function runEdgeTTS({ inputText, voiceKey, outFile }) {
     p.stdout.on("data", (d) => (stdout += d.toString()));
     p.stderr.on("data", (d) => (stderr += d.toString()));
 
-    // ✅ 把全文通过 stdin 喂给 python
     p.stdin.write(inputText, "utf8");
     p.stdin.end();
 
@@ -103,7 +97,7 @@ function createRewriteKey(text, mode) {
     .digest("hex");
 }
 
-/** ====== Prompt（v1） ====== */
+/** ====== Prompts ====== */
 const COMMON_RULES = `
 你是"用于朗读的文本编辑器"，不是聊天机器人。
 必须遵守：
@@ -130,266 +124,215 @@ ${COMMON_RULES}
 输出：只输出最终朗读正文。
 `;
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STORY_PROMPT v3
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const STORY_PROMPT = `
-${COMMON_RULES}
+你是一个说书人。
 
-你是一位专业说书人。
+你的任务不是朗读原文，也不是改写原文。
 
-你的任务不是改写原文。
+你的任务是：
 
-而是：
+读完原文，然后把这个故事重新讲一遍。
 
-阅读下面的小说内容，
-然后用"说书人"的方式，
-重新讲一遍这个故事。
+就像一个说书先生坐在茶馆里，面对一屋子听众，开口讲故事。
 
-目标：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-让听众感觉
-有人在现场讲故事。
+【核心风格：单田芳 / 郭德纲 / 深夜说书】
 
-而不是在朗读文字。
+讲故事要有现场感。
 
-------------------------------------------------
+说书人不是念稿子的——
 
-【允许】
+他是在"演"这个故事。
 
-可以：
+语言要口语，要有节奏，要有停顿，要有情绪。
 
-- 重组句子
-- 大幅口语化
-- 增加停顿
-- 加入讲述语气
-- 加入轻微调侃
-- 加入简短点评
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-只要：
+【示范：原文 vs 说书人版】
 
-人物不变  
-事件不变  
-剧情顺序不变  
+原文：
+"他走进房间，发现桌上有一封信，拆开一看，脸色立刻变了。"
 
-即可。
+说书人版：
+他推开门，走了进去。
 
-------------------------------------------------
+屋子里静悄悄的。
 
-【说书风格】
+桌上摆着什么？
 
-语言要：
+一封信。
 
-口语化  
-有节奏  
-有停顿  
+他拿起来，拆开——
 
-鼓励使用：
+就这么一看。
 
-短句。
+哎。
 
-例如：
+脸色，变了。
 
-那天晚上。
+---
 
-事情有点不对劲。
+原文：
+"两人大吵了一架，最终她摔门而出。"
 
-屋子里很安静。
+说书人版：
+这俩人啊，一句话不对付，就吵起来了。
 
-安静得——
+你一句，我一句，越说越激动。
 
-连风声都听得见。
+最后怎么着？
 
-------------------------------------------------
+她也不说话了，抓起包——
 
-【说书表达】
+砰。
 
-允许出现：
+门，给摔上了。
 
-要说这事  
-你再看  
-事情到了这一步  
-结果呢  
-这就有意思了  
+---
 
-------------------------------------------------
+原文：
+"战场上尸横遍野，血流成河，这一战打了整整三天三夜。"
+
+说书人版：
+那是什么场面啊——
+
+战场上，遍地都是人。
+
+血，顺着地往下淌。
+
+这一仗，打了多久？
+
+三天。
+
+三夜。
+
+整整三天三夜，没停。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【节奏规则】
+
+大量使用短句。
+
+用换行制造停顿，不要把所有内容塞在一个长句里。
+
+关键时刻，可以一个词单独成行：
+
+哎。
+
+停。
+
+就这样。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【情绪演绎】
+
+原文里有情绪的地方，说书人要通过节奏和句式放大它。
+
+紧张的时候，句子要短，停顿要密；
+
+悲伤的时候，节奏放慢，语气沉，不加多余的词；
+
+高兴或意外的时候，用"你猜怎么着""结果呢""偏偏就在这时候"来制造悬念和转折。
+
+【关于语气词——重要规则】
+
+语气词不是装饰品，不能随意添加。
+
+每个语气词都有它专属的情绪场景：
+
+"哎"——只用于叹气、无奈、感慨命运，不用于其他场合。
+
+"嘿"——只用于惊喜、得意、有点坏笑的时候。
+
+"唉"——只用于真正的悲伤或遗憾。
+
+"得嘞""行了"——只用于事情尘埃落定，有一种收尾感。
+
+禁止：在不匹配的情绪场景里随便塞语气词。
+
+宁可不用，也不能用错。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【说书人的点评——质量要求】
+
+点评是说书人的灵魂，但必须是真正有洞察的点评。
+
+好的点评：针对这个人、这件事、这个具体情节，说出一个听众没想到但回头一想"对啊"的观察。
+
+坏的点评：任何故事都能套的废话，例如"这人真是不简单""事情就这么发生了"。
+
+示范——
+
+原文：武松打完虎，两腿发软，提不动虎。
+
+差的点评："这人真是厉害啊。"（废话，任何打虎场景都能套）
+
+好的点评："你看，真正的猛人，打完了也一样腿软。猛的是那口气，不是身体。"（针对这个具体细节，有洞察）
+
+---
+
+原文：她一声不吭，摔门走了。
+
+差的点评："这女的也是，何必呢。"（无聊）
+
+好的点评："最狠的不是骂人，是不说话。"（一句话，点出了这个动作背后的情绪逻辑）
+
+---
+
+规则：
+
+宁可不点评，也不说废话。
+
+一段里最多点评一次，点到为止。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【拟声与现场感】
+
+原文如果有动作、声音、场景，说书人可以加拟声词：
+
+轰——
+砰。
+哗啦啦。
+咣当一声。
+嗖地一下。
+
+这些词让听众有画面感。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 【禁止】
 
-不要新增人物  
-不要新增关键剧情  
-不要改变结局  
+不新增主要人物。
+不新增关键剧情节点。
+不改变故事结局。
 
-------------------------------------------------
+但在这个范围内：
+
+可以重组结构，可以大幅口语化，可以加情绪，可以加点评。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 【连续性】
 
-如果提供 previous_text：
+如果有上一段内容，自然衔接，不要重新开场，不要重复背景。
 
-自然衔接。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-不要重新开场。
+【输出要求】
 
-------------------------------------------------
+只输出说书人讲述的故事正文。
 
-【输出】
+不要解释，不要说明，不要加标题。
 
-只输出讲述后的故事。
-
-不要解释。
-不要说明。
-直接讲故事。
-`;
-
-const STORY_PROMPT_BACKUP = `
-${COMMON_RULES}
-
-【角色】
-
-你是一位职业说书人。
-
-讲故事的风格参考：
-
-中国传统评书  
-单口相声讲故事  
-茶馆说书  
-
-讲述气质类似：
-
-郭德纲讲长篇故事  
-袁阔成评书  
-单口相声讲故事
-
-目标：
-
-让听众感觉 **有人在现场讲故事**。
-
-而不是在朗读文字。
-
-------------------------------------------------
-
-【核心原则】
-
-不要逐句改写原文。
-
-而是：
-
-读完原文后，
-用说书人的方式 **重新讲一遍这个故事**。
-
-允许：
-
-- 重组结构
-- 改写句子
-- 简化描述
-- 口语化
-- 加入说书人表达
-- 加入轻松评论
-- 加入调侃
-
-只要保持：
-
-- 人物不变
-- 事件不变
-- 结果不变
-
-即可。
-
-------------------------------------------------
-
-【说书节奏】
-
-必须大量使用：
-
-短句。
-
-停顿。
-
-自然口语。
-
-示例节奏：
-
-那天晚上。
-
-事情啊。
-
-有点不对劲。
-
-屋子里很安静。
-
-安静到什么程度？
-
-你要是站在那儿——
-
-连自己呼吸声都听得见。
-
-------------------------------------------------
-
-【允许加入的内容】
-
-说书人可以加入：
-
-轻点评  
-轻调侃  
-轻吐槽  
-
-例如：
-
-"这事要是换了别人，估计早就慌了。"
-
-"你说这人胆子也是真不小。"
-
-"事情啊，就从这儿开始变味了。"
-
-但注意：
-
-评论必须短。
-
-不能长篇说教。
-
-------------------------------------------------
-
-【口语化表达】
-
-鼓励使用：
-
-要说这事  
-你再看  
-事情到了这一步  
-有意思的是  
-结果呢  
-可问题来了  
-
-这些都是说书人常见表达。
-
-------------------------------------------------
-
-【禁止】
-
-不要：
-
-新增人物  
-新增关键剧情  
-改变故事结局  
-
-------------------------------------------------
-
-【连续性】
-
-如果存在 previous_text：
-
-要自然衔接。
-
-不要重新开场。
-
-------------------------------------------------
-
-【输出】
-
-只输出讲述后的故事。
-
-不要解释。
-
-不要说明你在改写。
-
-直接讲。
+直接开讲。
 `;
 
 const TRANSLATE_PROMPT = `
@@ -404,7 +347,6 @@ ${COMMON_RULES}
 
 // ====== /tts ======
 app.post("/tts", async (req, res) => {
-  // 【新增】：chunkIndex / totalChunks 为可选字段（前端不传也不影响）
   const {
     text,
     mode,
@@ -414,7 +356,6 @@ app.post("/tts", async (req, res) => {
     totalChunks,
   } = req.body;
   console.log("MODE:", mode);
-
   console.log("rewrite previous:", previous ? previous.slice(-60) : "NONE");
 
   try {
@@ -423,7 +364,6 @@ app.post("/tts", async (req, res) => {
       return res.status(400).json({ error: "text is empty" });
     }
 
-    // 1) 文本处理（rewrite/translate）
     const needRewrite = mode === "story" || mode === "translate" || mode === "announcer" || mode === "original";
 
     if (needRewrite) {
@@ -445,14 +385,13 @@ app.post("/tts", async (req, res) => {
             .json({ error: "缺少 OPENAI_API_KEY（请在 .env 里设置）" });
         }
 
-        // 选择 prompt
         let systemPrompt = ANNOUNCER_PROMPT;
         let temperature = 0.4;
         let roleName = "ANNOUNCER";
 
         if (mode === "story") {
           systemPrompt = STORY_PROMPT;
-          temperature = 0.9;
+          temperature = 0.92;
           roleName = "STORYTELLER";
         } else if (mode === "translate") {
           systemPrompt = TRANSLATE_PROMPT;
@@ -466,16 +405,28 @@ app.post("/tts", async (req, res) => {
 
         const idx = Number.isFinite(Number(chunkIndex)) ? Number(chunkIndex) : 0;
         const total = Number.isFinite(Number(totalChunks)) ? Number(totalChunks) : 0;
+        const chunkLabel = idx > 0 && total > 0 ? `${idx}/${total}` : idx > 0 ? `${idx}/?` : `?/?`;
 
-        const chunkLabel =
-          idx > 0 && total > 0 ? `${idx}/${total}` : idx > 0 ? `${idx}/?` : `?/?`;
-
-        console.log(
-          `rewrite meta: role=${roleName} chunk=${chunkLabel} previous=${previous ? "YES" : "NO"}`
-        );
+        console.log(`rewrite meta: role=${roleName} chunk=${chunkLabel} previous=${previous ? "YES" : "NO"}`);
 
         const prevText = previous ? String(previous).slice(-400) : "";
-        const userContent = `
+
+        // ── story 模式用专属 userContent，其他模式用通用版 ──
+        const userContent = mode === "story"
+          ? `
+段落序号：${chunkLabel}
+
+上一段已讲述内容（用于衔接，可能为空）：
+${prevText}
+
+原文内容：
+${inputText}
+
+现在，用说书人的方式把这段故事讲出来。
+
+记住：你不是在朗读原文，你是在讲故事。大胆演绎，情绪到位。
+`.trim()
+          : `
 角色：${roleName}
 段落序号：${chunkLabel}
 
@@ -516,8 +467,7 @@ ${inputText}
         }
 
         const rewriteData = await rewriteResponse.json();
-        inputText =
-          rewriteData?.choices?.[0]?.message?.content?.trim() || inputText;
+        inputText = rewriteData?.choices?.[0]?.message?.content?.trim() || inputText;
 
         rewriteCache[cacheKey] = inputText;
         fs.writeFileSync(rewriteCachePath, JSON.stringify(rewriteCache, null, 2));
@@ -537,12 +487,10 @@ ${inputText}
 
     console.log("🎧 TTS request:", { mode, voice, chars: inputText.length });
 
-    // ===== TTS cache 检查 =====
     let needGenerate = true;
 
     if (fs.existsSync(outFile)) {
       const stat = fs.statSync(outFile);
-
       if (stat.size > 100) {
         console.log("⚡ TTS cache hit");
         needGenerate = false;
@@ -620,26 +568,22 @@ function cleanVTT(raw) {
   for (const line of lines) {
     const t = line.trim();
 
-    // 跳过头部、时间戳、空行、元信息
     if (!t) continue;
     if (t.startsWith("WEBVTT")) continue;
     if (t.startsWith("Kind:")) continue;
     if (t.startsWith("Language:")) continue;
-    if (/^\d{2}:\d{2}:\d{2}/.test(t)) continue; // 时间戳行
-    if (/^\d+$/.test(t)) continue;               // 纯数字序号
+    if (/^\d{2}:\d{2}:\d{2}/.test(t)) continue;
+    if (/^\d+$/.test(t)) continue;
 
-    // 去掉 HTML 标签（如 <c> <b> 等）
     const clean = t.replace(/<[^>]+>/g, "").trim();
     if (!clean) continue;
 
-    // 去掉重复行（VTT 里同一句话常出现两次）
     if (clean === lastLine) continue;
     lastLine = clean;
 
     result.push(clean);
   }
 
-  // 每 5 句合并成一行，形成自然段落
   const merged = [];
   for (let i = 0; i < result.length; i += 5) {
     merged.push(result.slice(i, i + 5).join(" "));
@@ -681,7 +625,6 @@ app.post("/fetch-youtube", async (req, res) => {
       const raw = fs.readFileSync(tmpFile, "utf8");
       const text = cleanVTT(raw);
 
-      // 清理临时文件
       try { fs.unlinkSync(tmpFile); } catch {}
 
       console.log("🎬 字幕提取成功，字符数:", text.length);
