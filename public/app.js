@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260310-3';
+import { generateAudioFromText } from './audioEngine.js?v=20260310-4';
 import { saveProgress, loadProgress } from './storage.js';
 
 const textInput = document.getElementById("textInput");
@@ -448,16 +448,12 @@ async function preGenerateNext(index, jobId) {
       rewrittenChunks[index] = rewrittenText;
     }
 
-    // ✅ 修复：填槽逻辑，填完后只继续预生成 index+1，不重复
     if (!nextAudioUrl) {
       nextAudioUrl = url;
-      // 继续预生成下一段
-      preGeneratingIndex = -1;
-      preGenerateNext(index + 1, jobId);
     } else if (!nextNextAudioUrl) {
       nextNextAudioUrl = url;
-      // nextNext 已满，停止预生成，等 ended 事件推进
     }
+    // 不在这里递归，由 ended 事件统一驱动
 
   } catch (e) {
     if (e?.name === "AbortError") return;
@@ -721,7 +717,6 @@ audioPlayer?.addEventListener("ended", async function () {
   if (!isAutoPlaying) return;
 
   currentIndex += 1;
-
   saveSession({ currentIndex });
 
   if (nextAudioUrl) {
@@ -739,15 +734,6 @@ audioPlayer?.addEventListener("ended", async function () {
     audioPlayer.currentTime = 0;
     audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
 
-    if (restoreTime > 0) {
-      audioPlayer.addEventListener("loadedmetadata", () => {
-        try {
-          audioPlayer.currentTime = restoreTime;
-          restoreTime = 0;
-        } catch {}
-      }, { once: true });
-    }
-
     setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
       busy: true,
       step: currentIndex + 1,
@@ -756,10 +742,13 @@ audioPlayer?.addEventListener("ended", async function () {
 
     await audioPlayer.play();
 
-    // ✅ 修复：重置后只触发一次预生成，填满空槽
-    const nextSlotIndex = nextAudioUrl ? (currentIndex + 2) : (currentIndex + 1);
+    // ended 统一驱动：填满空槽
     preGeneratingIndex = -1;
-    preGenerateNext(nextSlotIndex, currentJobId);
+    if (!nextAudioUrl) {
+      preGenerateNext(currentIndex + 1, currentJobId);
+    } else if (!nextNextAudioUrl) {
+      preGenerateNext(currentIndex + 2, currentJobId);
+    }
 
     return;
   }
