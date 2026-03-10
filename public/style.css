@@ -82,7 +82,7 @@ body{
 .title{
   margin:0;
   font-size: 26px;
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: -0.3px;
   line-height: 1.05;
 }
@@ -110,7 +110,7 @@ body{
 
 .card-title{
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 800;
   margin: 0;
   letter-spacing: .2px;
 }
