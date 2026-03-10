@@ -9,8 +9,9 @@ const mammoth = require("mammoth");
 const pdfParse = require("pdf-parse");
 const fs = require("fs");
 const path = require("path");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process"); // ✅ 新增 execFile
 const crypto = require("crypto");
+const os = require("os"); // ✅ 新增 os
 
 // ===== rewrite cache =====
 const rewriteCachePath = path.join(__dirname, "rewrite_cache.json");
@@ -104,11 +105,11 @@ function createRewriteKey(text, mode) {
 
 /** ====== Prompt（v1） ====== */
 const COMMON_RULES = `
-你是“用于朗读的文本编辑器”，不是聊天机器人。
+你是"用于朗读的文本编辑器"，不是聊天机器人。
 必须遵守：
 1) 只输出最终可朗读正文，禁止解释、禁止列规则、禁止自我评价、禁止任何前后缀。
 2) 不得编造事实：不添加原文没有的新人物/新事件/新数据/新因果。
-3) 朗读友好：尽量短句、自然停顿、去掉网页口吻（如“点击这里/如上图/见链接”）。
+3) 朗读友好：尽量短句、自然停顿、去掉网页口吻（如"点击这里/如上图/见链接"）。
 4) 连续性：如果提供了上一段内容，必须承接；禁止每段都重新开场/重复标题/重复背景。
 5) 遇到病句/不通顺：允许小幅改写让其顺畅，但不得改变原意。
 6) 输入为古文/外文：先翻译成现代中文，再做朗读化处理。
@@ -120,10 +121,10 @@ ${COMMON_RULES}
 
 【角色：播音员】
 定位：专业播音员/纪录片旁白。忠于原文、克制、不点评、不玩梗。
-目标：读起来像真人在朗读，顺、稳、自然，尽量去“AI味”。
+目标：读起来像真人在朗读，顺、稳、自然，尽量去"AI味"。
 
 规则：
-- 不加观点、不加评论、不加笑点、不加“主持人开场白”（禁：大家好/欢迎收听/今天我们来聊）。
+- 不加观点、不加评论、不加笑点、不加"主持人开场白"（禁：大家好/欢迎收听/今天我们来聊）。
 - 允许轻量润色：拆长句、调语序、补必要主语，使更顺口。
 - 不做额外总结；除非原文在总结。
 输出：只输出最终朗读正文。
@@ -139,7 +140,7 @@ ${COMMON_RULES}
 而是：
 
 阅读下面的小说内容，
-然后用“说书人”的方式，
+然后用"说书人"的方式，
 重新讲一遍这个故事。
 
 目标：
@@ -331,11 +332,11 @@ ${COMMON_RULES}
 
 例如：
 
-“这事要是换了别人，估计早就慌了。”
+"这事要是换了别人，估计早就慌了。"
 
-“你说这人胆子也是真不小。”
+"你说这人胆子也是真不小。"
 
-“事情啊，就从这儿开始变味了。”
+"事情啊，就从这儿开始变味了。"
 
 但注意：
 
@@ -423,10 +424,6 @@ app.post("/tts", async (req, res) => {
     }
 
     // 1) 文本处理（rewrite/translate）
-    // 说明：
-    // - mode === "story"     → 说书人
-    // - mode === "translate" → 翻译
-    // - 其他（含空/normal） → 播音员（朗读优化）
     const needRewrite = mode === "story" || mode === "translate" || mode === "announcer" || mode === "original";
 
     if (needRewrite) {
@@ -467,7 +464,6 @@ app.post("/tts", async (req, res) => {
           roleName = "ANNOUNCER";
         }
 
-        // ===== 构造 userContent（关键升级：加入段落位置信息）=====
         const idx = Number.isFinite(Number(chunkIndex)) ? Number(chunkIndex) : 0;
         const total = Number.isFinite(Number(totalChunks)) ? Number(totalChunks) : 0;
 
@@ -571,7 +567,6 @@ ${inputText}
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("X-Rewritten-Text", encodeURIComponent(inputText));
 
-
     const stream = fs.createReadStream(outFile);
 
     stream.on("error", (err) => {
@@ -614,6 +609,87 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
     console.error(error);
     res.status(500).json({ error: "PDF 解析失败" });
   }
+});
+
+// ====== 工具：清理 VTT 字幕，提取纯文本 ======
+function cleanVTT(raw) {
+  const lines = raw.split("\n");
+  const result = [];
+  let lastLine = "";
+
+  for (const line of lines) {
+    const t = line.trim();
+
+    // 跳过头部、时间戳、空行、元信息
+    if (!t) continue;
+    if (t.startsWith("WEBVTT")) continue;
+    if (t.startsWith("Kind:")) continue;
+    if (t.startsWith("Language:")) continue;
+    if (/^\d{2}:\d{2}:\d{2}/.test(t)) continue; // 时间戳行
+    if (/^\d+$/.test(t)) continue;               // 纯数字序号
+
+    // 去掉 HTML 标签（如 <c> <b> 等）
+    const clean = t.replace(/<[^>]+>/g, "").trim();
+    if (!clean) continue;
+
+    // 去掉重复行（VTT 里同一句话常出现两次）
+    if (clean === lastLine) continue;
+    lastLine = clean;
+
+    result.push(clean);
+  }
+
+  // 每 5 句合并成一行，形成自然段落
+  const merged = [];
+  for (let i = 0; i < result.length; i += 5) {
+    merged.push(result.slice(i, i + 5).join(" "));
+  }
+
+  return merged.join("\n");
+}
+
+/** ====== /fetch-youtube ====== */
+app.post("/fetch-youtube", async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: "url is required" });
+
+  const ytDlpPath = process.env.YTDLP_PATH || "yt-dlp";
+  const tmpBase = path.join(os.tmpdir(), `yt_sub_${Date.now()}`);
+  const tmpFile = `${tmpBase}.en.vtt`;
+
+  const args = [
+    "--cookies", path.join(__dirname, "cookies.txt"),
+    "--remote-components", "ejs:github",
+    "--write-subs",
+    "--write-auto-subs",
+    "--sub-langs", "en",
+    "--sub-format", "vtt",
+    "--skip-download",
+    "--output", tmpBase,
+    url
+  ];
+
+  console.log("🎬 yt-dlp 开始提取字幕:", url);
+
+  execFile(ytDlpPath, args, { timeout: 60000 }, (err, stdout, stderr) => {
+    if (!fs.existsSync(tmpFile)) {
+      console.error("yt-dlp stderr:", stderr);
+      return res.status(500).json({ error: "字幕文件未生成，该视频可能没有英文字幕，或需要登录" });
+    }
+
+    try {
+      const raw = fs.readFileSync(tmpFile, "utf8");
+      const text = cleanVTT(raw);
+
+      // 清理临时文件
+      try { fs.unlinkSync(tmpFile); } catch {}
+
+      console.log("🎬 字幕提取成功，字符数:", text.length);
+      res.json({ text });
+    } catch (e) {
+      res.status(500).json({ error: "字幕解析失败: " + e.message });
+    }
+  });
 });
 
 app.listen(PORT, "0.0.0.0", () => {

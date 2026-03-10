@@ -28,21 +28,20 @@ const progressLabel = document.getElementById("progressLabel");
 const sleepTimer = document.getElementById("sleepTimer");
 
 let chunks = [];
-let rewrittenChunks = [];   // ⭐新增：保存 rewrite 结果
+let rewrittenChunks = [];
 let currentIndex = 0;
 let isAutoPlaying = false;
 let sleepTimerId = null;
 let sleepMode = null;
 let restoreTime = 0;
 
-/** ✅ 新增：用于“可中断生成”的控制 */
-let currentAbort = null;     // AbortController
-let currentJobId = 0;        // 每次点击生成+1，旧任务结果全部作废
-let currentAudioUrl = null;  // 释放 objectURL，避免内存泄漏
+let currentAbort = null;
+let currentJobId = 0;
+let currentAudioUrl = null;
 let nextAudioUrl = null;
 let nextAbort = null;
 let nextNextAudioUrl = null;
-let preGeneratingIndex = -1; // 正在预生成的 index，防止重复生成
+let preGeneratingIndex = -1;
 const SESSION_KEY = "ai_reader_session_v1";
 
 function saveSession(patch = {}) {
@@ -87,8 +86,6 @@ function setStatus(text, type = "info", opts = {}) {
   else if (type === "bad") statusText.classList.add("bad");
   else statusText.classList.add("info");
 
-  // ✅ 改：不再用 busy 锁死“生成并播放”
-  // 生成按钮永远可点，用来“打断并重来”
   if (generateBtn && typeof opts.busy === "boolean") {
     generateBtn.disabled = false;
   }
@@ -102,7 +99,6 @@ function setStatus(text, type = "info", opts = {}) {
   }
 }
 
-// ✅ 稳定分段（保留你原来的）
 function splitTextIntoChunks(text, opts = {}) {
   const { maxLen = 2200, minLen = 800 } = opts;
 
@@ -179,22 +175,16 @@ function splitTextIntoChunks(text, opts = {}) {
   return chunks;
 }
 
-// ✅ 新增：电子书“开头垃圾信息/目录”清理（所有模式都生效）
-// 目标：删掉作者/出版社/ISBN/版权页，以及开头连续的“第一章 第二章 …”目录块
-// 策略：只处理“开头一段”，非常保守，避免误删正文
 function cleanBookTextForReading(rawText) {
   const text = (rawText || "").replace(/\r/g, "").trim();
   if (!text) return "";
 
-  // 只扫描开头 N 行，避免误伤正文中间内容
   const MAX_HEAD_LINES = 220;
   const lines = text.split("\n");
 
   const head = lines.slice(0, MAX_HEAD_LINES);
   const tail = lines.slice(MAX_HEAD_LINES);
 
-  // 1) 清理开头元信息（作者/出版社/ISBN/版权等）
-  // 只删“看起来像元信息的一整行”
   const metaLineRe = new RegExp(
     [
       "^\\s*(作者|编者|译者|校注|整理|出品|出版|出版社|出版方|出品方|责任编辑|责任编辑|策划|监制)\\s*[:：].*$",
@@ -206,8 +196,6 @@ function cleanBookTextForReading(rawText) {
     "i"
   );
 
-  // 2) 识别“目录块”：开头连续多行的章节标题
-  // 例：第一章 / 第十二章 / Chapter 1 / 1. / 第一回 / 楔子 / 序章
   const tocLineRe = new RegExp(
     [
       "^\\s*(目录|目\\s*录|contents)\\s*$",
@@ -220,34 +208,25 @@ function cleanBookTextForReading(rawText) {
     "i"
   );
 
-  // 先把 head 做一遍“元信息删除”
   let cleanedHead = [];
   for (let i = 0; i < head.length; i++) {
     const line = head[i].trim();
     if (!line) {
-      cleanedHead.push(""); // 保留空行结构
+      cleanedHead.push("");
       continue;
     }
-    // 删除非常明确的元信息行
     if (metaLineRe.test(line)) continue;
-
     cleanedHead.push(head[i]);
   }
 
-  // 再尝试删除“目录块”
-  // 规则：从头开始找，出现（目录/章节标题）密度很高的一段，就判定为目录块并删掉
-  // 判定方式：在一个窗口里，tocLineRe 命中 >= 6 行，并且命中占比 >= 60%
   const WINDOW = 18;
   let cutStart = -1;
   let cutEnd = -1;
 
   const headLines = cleanedHead;
-
-  // 找目录块起点（更保守：必须在前 120 行内出现）
   const SEARCH_LIMIT = Math.min(120, headLines.length);
 
   for (let i = 0; i < SEARCH_LIMIT; i++) {
-    // 找到 “目录” 这一行，优先从这里开始判定
     const t = (headLines[i] || "").trim();
     if (/^(目录|目\s*录|contents)\s*$/i.test(t)) {
       cutStart = i;
@@ -255,7 +234,6 @@ function cleanBookTextForReading(rawText) {
     }
   }
 
-  // 如果没找到“目录”行，就用窗口密度找一段目录块（更保守：只在前 80 行找）
   if (cutStart === -1) {
     const DENSE_LIMIT = Math.min(80, headLines.length);
     for (let i = 0; i < DENSE_LIMIT; i++) {
@@ -279,7 +257,6 @@ function cleanBookTextForReading(rawText) {
     }
   }
 
-  // 有目录块起点，就继续往下扩展，直到连续多行都不像目录为止
   if (cutStart !== -1) {
     let i = cutStart;
     let looseCount = 0;
@@ -287,77 +264,63 @@ function cleanBookTextForReading(rawText) {
     for (; i < headLines.length; i++) {
       const line = (headLines[i] || "").trim();
 
-      // 空行不算结束（目录里常有空行）
       if (!line) continue;
 
       if (tocLineRe.test(line) || /^(目录|目\s*录|contents)\s*$/i.test(line)) {
         looseCount = 0;
         continue;
       } else {
-        // 连续多行不匹配就认为目录结束
         looseCount++;
         if (looseCount >= 3) {
-          cutEnd = i; // i 这一行开始算正文
+          cutEnd = i;
           break;
         }
       }
     }
 
-    // 如果一直到末尾都是目录样式，那就全部当目录删掉
     if (cutEnd === -1) cutEnd = headLines.length;
 
-    // 删掉目录块
     const kept = headLines.slice(0, cutStart).concat(headLines.slice(cutEnd));
     cleanedHead = kept;
   }
 
-  // 合并回正文：head + tail
   const merged = cleanedHead.concat(tail).join("\n");
 
-  // 最后做一次简单的空行压缩（最多保留 2 个连续空行）
   return merged
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-/** ✅ 新增：立刻停止当前播放/队列/网络请求，并清理资源 */
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
 
-  // 取消正在进行的 TTS 请求
   if (currentAbort) {
     try { currentAbort.abort(); } catch {}
     currentAbort = null;
   }
 
-  // ✅ 清理预生成中的请求
-if (nextAbort) {
-  try { nextAbort.abort(); } catch {}
-  nextAbort = null;
-}
-preGeneratingIndex = -1; // ✅ 重置预生成状态
+  if (nextAbort) {
+    try { nextAbort.abort(); } catch {}
+    nextAbort = null;
+  }
+  preGeneratingIndex = -1;
 
-// ✅ 释放预生成的音频URL（nextAudioUrl）
-if (nextAudioUrl) {
-  try { URL.revokeObjectURL(nextAudioUrl); } catch {}
-}
-nextAudioUrl = null;
+  if (nextAudioUrl) {
+    try { URL.revokeObjectURL(nextAudioUrl); } catch {}
+  }
+  nextAudioUrl = null;
 
-// ✅ 如果你有 nextNextAudioUrl（第二个预生成缓存），也要清理
-if (typeof nextNextAudioUrl !== "undefined" && nextNextAudioUrl) {
-  try { URL.revokeObjectURL(nextNextAudioUrl); } catch {}
-}
-nextNextAudioUrl = null;
+  if (typeof nextNextAudioUrl !== "undefined" && nextNextAudioUrl) {
+    try { URL.revokeObjectURL(nextNextAudioUrl); } catch {}
+  }
+  nextNextAudioUrl = null;
 
-  // 停止 audio
   if (audioPlayer) {
     audioPlayer.pause();
-    // 重置 src 可以立刻打断
     audioPlayer.removeAttribute("src");
     audioPlayer.load();
   }
 
-  // 释放上一次生成的 objectURL，避免越用越占内存
   if (currentAudioUrl) {
     try { URL.revokeObjectURL(currentAudioUrl); } catch {}
     currentAudioUrl = null;
@@ -366,7 +329,6 @@ nextNextAudioUrl = null;
   if (reason) setStatus(reason, "info", { busy: false });
 }
 
-/** ✅ 改造：playChunk 支持“可取消” + “旧任务作废” */
 async function playChunk(index, jobId) {
   const mode = modeSelect?.value || "original";
   const total = chunks.length;
@@ -378,60 +340,48 @@ async function playChunk(index, jobId) {
     total
   });
 
-  // 每次生成都用新的 AbortController
   const abort = new AbortController();
   currentAbort = abort;
 
-  // ✅ 关键：把 signal 传进去（需要配合 audioEngine.js 的小改动，见后面）
   let result;
 
-try {
+  try {
+    const textToSend = rewrittenChunks[index] || chunks[index];
 
-  // 如果已经 rewrite 过，就直接用 rewrite 后文本
-const textToSend = rewrittenChunks[index] || chunks[index];
-
-result = await generateAudioFromText(
-  textToSend,
-  mode,
-  voice,
-  abort.signal,
-  rewrittenChunks[index - 1] || null,
-  index + 1,
-  chunks.length
-);
-
-} catch (e) {
-
-  if (e?.name === "AbortError") {
-    console.log("生成被取消");
-    return;
+    result = await generateAudioFromText(
+      textToSend,
+      mode,
+      voice,
+      abort.signal,
+      rewrittenChunks[index - 1] || null,
+      index + 1,
+      chunks.length
+    );
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      console.log("生成被取消");
+      return;
+    }
+    throw e;
   }
 
-  throw e;
+  const audioUrl = result.url;
+  const rewrittenText = result.rewritten;
 
-}
-
-const audioUrl = result.url;
-const rewrittenText = result.rewritten;
-
-
-
-  // 如果点击了新一轮“生成并播放”，旧结果直接丢弃
   if (jobId !== currentJobId) return;
 
   if (!audioUrl) throw new Error("audioUrl is null (TTS failed)");
   if (!rewrittenChunks[index] && rewrittenText) {
-  rewrittenChunks[index] = rewrittenText;
+    rewrittenChunks[index] = rewrittenText;
   }
 
-  // 清理旧的 objectURL
   if (currentAudioUrl) {
     try { URL.revokeObjectURL(currentAudioUrl); } catch {}
   }
   currentAudioUrl = audioUrl;
 
   audioPlayer.src = audioUrl;
-  audioPlayer.currentTime = 0;   // ⭐新增
+  audioPlayer.currentTime = 0;
   audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
 
   if (restoreTime > 0) {
@@ -440,7 +390,7 @@ const rewrittenText = result.rewritten;
         audioPlayer.currentTime = restoreTime;
         restoreTime = 0;
       } catch {}
-   }, { once: true });
+    }, { once: true });
   }
 
   setStatus(`播放第 ${index + 1}/${total} 段（${mode} / ${voice}）`, "ok", {
@@ -450,21 +400,16 @@ const rewrittenText = result.rewritten;
   });
 
   try {
-   preGenerateNext(index + 1, jobId);
-   await audioPlayer.play();
-   
-
-} catch (e) {
-  console.log("play() 被浏览器拒绝或异常:", e);
-
-  // 如果实际上已经在播放，就不要报错
-  if (!audioPlayer.paused) {
-    console.log("实际已播放，忽略错误");
-    return;
+    preGenerateNext(index + 1, jobId);
+    await audioPlayer.play();
+  } catch (e) {
+    console.log("play() 被浏览器拒绝或异常:", e);
+    if (!audioPlayer.paused) {
+      console.log("实际已播放，忽略错误");
+      return;
+    }
+    throw e;
   }
-
-  throw e; // 真的失败才抛
-}
 }
 
 async function preGenerateNext(index, jobId) {
@@ -478,17 +423,16 @@ async function preGenerateNext(index, jobId) {
   nextAbort = abort;
 
   try {
-
     const textToSend = rewrittenChunks[index] || chunks[index];
 
     const result = await generateAudioFromText(
-     textToSend,
-     mode,
-     voice,
-     abort.signal,
-     rewrittenChunks[index - 1] || null,
-     index + 1,
-     chunks.length
+      textToSend,
+      mode,
+      voice,
+      abort.signal,
+      rewrittenChunks[index - 1] || null,
+      index + 1,
+      chunks.length
     );
 
     const url = result.url;
@@ -498,41 +442,29 @@ async function preGenerateNext(index, jobId) {
       rewrittenChunks[index] = rewrittenText;
     }
 
-    // 如果已经开启了新任务，旧任务结果直接丢弃
     if (jobId !== currentJobId) return;
 
     if (!nextAudioUrl) {
-
       if (jobId !== currentJobId) return;
-
       nextAudioUrl = url;
-
       preGenerateNext(index + 1, jobId);
-
       return;
     }
 
     if (!nextNextAudioUrl) {
-
       if (jobId !== currentJobId) return;
-
       nextNextAudioUrl = url;
-
       setTimeout(() => {
         preGenerateNext(index + 1, jobId);
       }, 100);
-
       return;
     }
 
   } catch (e) {
-
     if (e?.name === "AbortError") return;
-
   }
 }
 
-// 上传文件（保留你的逻辑，只加：选择文件时打断播放）
 fileInput?.addEventListener("change", async function () {
   const file = fileInput.files[0];
   if (!file) return;
@@ -599,19 +531,42 @@ fileInput?.addEventListener("change", async function () {
 
 // ✅ 生成音频（可随时打断）
 generateBtn?.addEventListener("click", async function () {
-  let text = textInput.value;
+  let text = textInput.value.trim();
   if (!text) {
     alert("请输入文字");
     return;
   }
 
-  // ✅ 新增：分段前清理“电子书开头目录/元信息”（所有模式都生效）
-const cleaned = cleanBookTextForReading(text);
-if (cleaned && cleaned.trim().length > 0) {
-  text = cleaned;
-  // 回写文本框：方便你肉眼确认“目录确实被删掉了”
-  textInput.value = cleaned;
-}
+  // ✅ 识别 YouTube 链接，自动提取字幕
+  const isYouTube = /youtube\.com\/watch|youtu\.be\//.test(text);
+  if (isYouTube) {
+    setStatus("正在提取 YouTube 字幕...", "info", { busy: true });
+    try {
+      const response = await fetch("/fetch-youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: text })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "失败");
+      textInput.value = data.text || "";
+      text = textInput.value;
+      modeSelect.value = "translate";
+      voiceSelect.value = "young_female";
+      setStatus("字幕已提取，准备生成...", "info");
+    } catch (error) {
+      console.error(error);
+      setStatus("YouTube 字幕提取失败 ❌：" + error.message, "bad", { busy: false });
+      return;
+    }
+  }
+
+  // ✅ 分段前清理电子书开头目录/元信息
+  const cleaned = cleanBookTextForReading(text);
+  if (cleaned && cleaned.trim().length > 0) {
+    text = cleaned;
+    textInput.value = cleaned;
+  }
 
   // 1) 立刻打断上一轮
   interruptPlayback("已打断，按当前设置重新生成…");
@@ -620,27 +575,22 @@ if (cleaned && cleaned.trim().length > 0) {
   currentJobId += 1;
   const jobId = currentJobId;
 
-  // ✅ 加速启动：第一段切小（更快改写+更快出第一段音频）
-//    后续仍然用大段，保证整体效率
-const firstParts = splitTextIntoChunks(text, { maxLen: 420, minLen: 200 });
+  // 加速启动：第一段切小
+  const firstParts = splitTextIntoChunks(text, { maxLen: 420, minLen: 200 });
 
-if (firstParts.length > 1) {
-  const first = firstParts.shift(); // 第一段（短）
-  const restText = firstParts.join("\n\n"); // 剩余文本重新拼回去
+  if (firstParts.length > 1) {
+    const first = firstParts.shift();
+    const restText = firstParts.join("\n\n");
+    const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
+    chunks = [first, ...restParts];
+  } else {
+    chunks = firstParts;
+  }
 
-  const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
-
-  chunks = [first, ...restParts];
-} else {
-  chunks = firstParts;
-}
   currentIndex = 0;
+  rewrittenChunks = [];
 
-   // ⭐新增
-  saveSession({
-    chunks,
-    currentIndex
-  });
+  saveSession({ chunks, currentIndex });
 
   isAutoPlaying = true;
 
@@ -653,7 +603,6 @@ if (firstParts.length > 1) {
   try {
     await playChunk(currentIndex, jobId);
   } catch (error) {
-    // 如果是 abort 导致的错误，不算失败
     if (error?.name === "AbortError" || String(error?.message || "").includes("aborted")) {
       return;
     }
@@ -663,63 +612,47 @@ if (firstParts.length > 1) {
   }
 });
 
-// 播放/暂停（保持）
 const playPauseBtn = document.getElementById("playPauseBtn");
 
 playPauseBtn?.addEventListener("click", async function () {
 
-  // 恢复状态：没有 src
   if (!audioPlayer.src && chunks.length > 0) {
-
     try {
-
       isAutoPlaying = true;
-
       currentJobId += 1;
       const jobId = currentJobId;
-
       await playChunk(currentIndex, jobId);
-
       playPauseBtn.innerText = "⏸ 暂停";
-
     } catch (e) {
-
       console.error("恢复播放失败:", e);
       setStatus("恢复播放失败 ❌", "bad");
-
     }
-
     return;
   }
 
   if (audioPlayer.paused) {
-
     try {
       await audioPlayer.play();
       playPauseBtn.innerText = "⏸ 暂停";
     } catch (e) {
       console.log("播放失败:", e);
     }
-
   } else {
-
     audioPlayer.pause();
     playPauseBtn.innerText = "▶️ 播放";
-
   }
 
 });
 
-// 自动保存播放进度（保持）
 let lastSessionSave = 0;
 
 audioPlayer?.addEventListener("timeupdate", function () {
 
-if (sleepTargetTime && Date.now() >= sleepTargetTime) {
-  interruptPlayback("定时关闭");
-  sleepTargetTime = null;
-  return;
-}
+  if (sleepTargetTime && Date.now() >= sleepTargetTime) {
+    interruptPlayback("定时关闭");
+    sleepTargetTime = null;
+    return;
+  }
 
   saveProgress(audioPlayer.currentTime);
 
@@ -730,6 +663,7 @@ if (sleepTargetTime && Date.now() >= sleepTargetTime) {
   }
 
 });
+
 audioPlayer?.addEventListener("play", () => {
   if (playPauseBtn) playPauseBtn.innerText = "⏸ 暂停";
 });
@@ -738,109 +672,96 @@ audioPlayer?.addEventListener("pause", () => {
   if (playPauseBtn) playPauseBtn.innerText = "▶️ 播放";
 });
 
-// 页面加载时恢复播放进度（保持）
 window.addEventListener("load", function () {
 
   const session = loadSession();
   if (!session) return;
 
   try {
-
     textInput.value = session.text || "";
-
     chunks = session.chunks || [];
     currentIndex = session.currentIndex || 0;
-
     modeSelect.value = session.mode || "original";
     voiceSelect.value = session.voice || "young_female";
     speedSelect.value = session.speed || "1";
 
     if (session.currentTime != null) {
-       restoreTime = session.currentTime;
+      restoreTime = session.currentTime;
     }
 
     if (chunks.length > 0) {
-
-       isAutoPlaying = false;
-
-       setStatus(
+      isAutoPlaying = false;
+      setStatus(
         `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
-         "ok",
+        "ok",
         {
-         step: currentIndex,
-         total: chunks.length
+          step: currentIndex,
+          total: chunks.length
         }
       );
-
     }
-
   } catch (e) {
     console.log("恢复 session 失败", e);
   }
 
 });
 
-// ✅ 语速：立刻生效（保持）
 speedSelect?.addEventListener("change", function () {
   audioPlayer.playbackRate = parseFloat(speedSelect.value);
 });
 
-// ✅ 自动播放下一段：带 jobId 防止串线
 audioPlayer?.addEventListener("ended", async function () {
 
   if (sleepMode === "end") {
-  interruptPlayback("定时关闭（本段结束）");
-  sleepMode = null;
-  return;
-}
+    interruptPlayback("定时关闭（本段结束）");
+    sleepMode = null;
+    return;
+  }
 
   if (!isAutoPlaying) return;
 
   currentIndex += 1;
 
-  saveSession({
-    currentIndex
-  });
+  saveSession({ currentIndex });
 
   if (nextAudioUrl) {
+    const url = nextAudioUrl;
 
-  const url = nextAudioUrl;
+    if (currentAudioUrl) {
+      try { URL.revokeObjectURL(currentAudioUrl); } catch {}
+    }
 
-  if (currentAudioUrl) {
-  try { URL.revokeObjectURL(currentAudioUrl); } catch {}
+    nextAudioUrl = nextNextAudioUrl;
+    nextNextAudioUrl = null;
+    currentAudioUrl = url;
+
+    audioPlayer.src = url;
+    audioPlayer.currentTime = 0;
+    audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
+
+    if (restoreTime > 0) {
+      audioPlayer.addEventListener("loadedmetadata", () => {
+        try {
+          audioPlayer.currentTime = restoreTime;
+          restoreTime = 0;
+        } catch {}
+      }, { once: true });
+    }
+
+    setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
+      busy: true,
+      step: currentIndex + 1,
+      total: chunks.length
+    });
+
+    await audioPlayer.play();
+
+    const startIdx = nextAudioUrl ? (currentIndex + 2) : (currentIndex + 1);
+    preGenerateNext(startIdx, currentJobId);
+
+    return;
   }
 
-  nextAudioUrl = nextNextAudioUrl;
-  nextNextAudioUrl = null;
-
-  currentAudioUrl = url;
-
-  audioPlayer.src = url;
-  audioPlayer.currentTime = 0;   // ⭐新增
-  audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
-
-if (restoreTime > 0) {
-  audioPlayer.addEventListener("loadedmetadata", () => {
-    try {
-      audioPlayer.currentTime = restoreTime;
-      restoreTime = 0;
-    } catch {}
-  }, { once: true });
-}
-
-setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
-  busy: true,
-  step: currentIndex + 1,
-  total: chunks.length
-});
-
-  await audioPlayer.play();
-
-  const startIdx = nextAudioUrl ? (currentIndex + 2) : (currentIndex + 1);
-  preGenerateNext(startIdx, currentJobId);
-
-  return;
-}
   if (currentIndex >= chunks.length) {
     setStatus("全部播放完成 ✅", "ok", {
       busy: false,
@@ -862,46 +783,10 @@ setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
   }
 });
 
-// 读取链接：开始抓取前也打断播放（只加一行 interrupt）
-if (fetchUrlBtn) {
-  fetchUrlBtn.addEventListener("click", async function () {
-    if (!urlInput) {
-      alert("urlInput 没找到：请检查 HTML 里是否有 id=urlInput");
-      return;
-    }
-    const url = urlInput.value;
-    if (!url) {
-      alert("请输入链接");
-      return;
-    }
-
-    interruptPlayback("正在抓取网页内容，已停止当前播放");
-
-    setStatus("正在抓取网页内容...", "info", { busy: true });
-
-    try {
-      const response = await fetch("/fetch-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
-      });
-
-      const data = await response.json();
-      textInput.value = data.text || "";
-
-      setStatus("抓取成功 ✅", "ok", { busy: false });
-    } catch (error) {
-      console.error(error);
-      setStatus("抓取失败 ❌", "bad", { busy: false });
-    }
-  });
-}
 window.addEventListener("DOMContentLoaded", () => {
   const hasVisited = localStorage.getItem("ai_reader_visited");
 
   if (!hasVisited) {
-    // ===== 第一次进入 =====
-
     const defaultText = `
 臣亮言：先帝创业未半而中道崩殂。今天下三分，益州疲弊，此诚危急存亡之秋也。
 然侍卫之臣不懈于内，忠志之士忘身于外者，盖追先帝之殊遇，欲报之于陛下也。
@@ -909,8 +794,6 @@ window.addEventListener("DOMContentLoaded", () => {
 `;
 
     textInput.value = defaultText.trim();
-
-    // 默认故事模式 + 老年男
     modeSelect.value = "story";
     voiceSelect.value = "elder_male";
 
@@ -926,8 +809,6 @@ window.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem("ai_reader_visited", "1");
 
   } else {
-    // ===== 第二次及以后 =====
-
     modeSelect.value = "original";
     voiceSelect.value = "young_female";
   }
@@ -954,9 +835,7 @@ sleepTimer?.addEventListener("change", function () {
   }
 
   const seconds = parseInt(value);
-
   sleepTargetTime = Date.now() + seconds * 1000;
-
   setStatus(`已设置 ${seconds / 60} 分钟后关闭`, "info");
 
 });
