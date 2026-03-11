@@ -665,7 +665,7 @@ async function playChunk(index, jobId) {
   });
 
   try {
-    preGenerateNext(index + 1, jobId);
+    preGenerateNext(index + 1, jobId, "next");
     await audioPlayer.play();
   } catch (e) {
     console.log("play() 被浏览器拒绝或异常:", e);
@@ -680,7 +680,7 @@ async function playChunk(index, jobId) {
   }
 }
 
-async function preGenerateNext(index, jobId) {
+async function preGenerateNext(index, jobId, slot) {
   if (index >= chunks.length) return;
   if (preGeneratingIndex === index) return;
   preGeneratingIndex = index;
@@ -712,10 +712,9 @@ async function preGenerateNext(index, jobId) {
     if (!rewrittenChunks[index] && rewrittenText) {
       rewrittenChunks[index] = rewrittenText;
     }
-
-    if (!nextAudioUrl) {
+    if (slot === "next") {
       nextAudioUrl = url;
-    } else if (!nextNextAudioUrl) {
+    } else if (slot === "nextNext") {
       nextNextAudioUrl = url;
     }
     // ended 事件统一驱动，不在这里递归
@@ -981,11 +980,7 @@ audioPlayer?.addEventListener("ended", async function () {
 
     // ended 统一驱动：填满空槽
     preGeneratingIndex = -1;
-    if (!nextAudioUrl) {
-      preGenerateNext(currentIndex + 1, currentJobId);
-    } else if (!nextNextAudioUrl) {
-      preGenerateNext(currentIndex + 2, currentJobId);
-    }
+    preGenerateNext(currentIndex + 1, currentJobId, "nextNext");
 
     return;
   }
@@ -1005,8 +1000,7 @@ audioPlayer?.addEventListener("ended", async function () {
     await playChunk(currentIndex, jobId);
   } catch (e) {
     if (e?.name === "AbortError" || String(e?.message || "").includes("aborted")) return;
-    console.error(e);
-    setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
+    setStatus("下一段生成失败 ❌：" + (e?.message || String(e)), "bad", { busy: false });
     isAutoPlaying = false;
   }
 });
