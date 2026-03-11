@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260311-9';
+import { generateAudioFromText } from './audioEngine.js?v=20260311-10';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -113,6 +113,10 @@ function hashText(text) {
 
 function deriveTitle() {
   if (currentFileName) return currentFileName;
+  const text = textInput?.value?.trim() || "";
+  if (text.length > 0) {
+    return text.slice(0, 10).replace(/\s+/g, "") + (text.length > 10 ? "…" : "");
+  }
   const today = new Date().toISOString().slice(0, 10);
   return `未命名书籍 ${today}`;
 }
@@ -1147,6 +1151,7 @@ window.addEventListener("DOMContentLoaded", () => {
     textInput.value   = defaultText.trim();
     modeSelect.value  = "story";
     voiceSelect.value = "elder_male";
+    currentFileName   = "出师表节选";
 
     setTimeout(async () => {
       try {
