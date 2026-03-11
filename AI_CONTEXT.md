@@ -1,4 +1,4 @@
-# AI-Reader 项目 AI_CONTEXT v8（稳定开发版）
+# AI-Reader 项目 AI_CONTEXT v9（稳定开发版）
 
 ---
 
@@ -68,7 +68,7 @@
 
 ---
 
-## 五、YouTube 字幕提取功能（v8 新增）
+## 五、YouTube 字幕提取功能
 
 ### 功能说明
 - 用户在文本框直接粘贴 YouTube 链接
@@ -253,6 +253,10 @@ Idle → Generating → Playing → Finished / Interrupted
 - 10分钟 / 30分钟 / 60分钟 / 播完当前段
 - 实现：sleepTargetTime / sleepMode=end
 
+### 下拉菜单样式
+- 所有下拉菜单（朗读模式、朗读者、语速、定时关闭、段落选择）统一使用自定义样式
+- 圆角、统一高度、MiSans 字体、font-weight: 500
+
 ---
 
 ## 十八、前端缓存规则（非常重要）
@@ -261,13 +265,71 @@ Idle → Generating → Playing → Finished / Interrupted
 
 每次前端更新必须修改资源版本号：
 ```
-app.js?v=20260310
-style.css?v=20260310
+app.js?v=20260310-6
+style.css?v=20260310-7
 ```
 
 ---
 
-## 十九、VPS 部署信息（v8 新增）
+## 十九、书架功能（v9 新增）
+
+### 功能说明
+- 支持最多 10 本书，每本书独立保存进度和设置
+- 入口：右上角书架图标（🗂️），点击从底部滑出抽屉（Bottom Sheet）
+- 切换书本时自动恢复该书的进度、朗读模式、声线、语速
+
+### 书名规则
+- 上传文件时：使用文件名（去掉扩展名）作为书名
+- 手动粘贴文字时：默认书名为"未命名书籍 YYYY-MM-DD"
+
+### 数据存储
+- localStorage key：`ai_reader_shelf_v1`
+- 结构：`{ books: [ { id, title, fileName, text, chunks, currentIndex, currentTime, mode, voice, speed, totalChunks } ] }`
+
+### iPhone Safari 注意事项
+- localStorage 容量充足（Safari 17+ 可用磁盘 60%）
+- 7天未访问会被清除，建议用户添加到主屏幕（Add to Home Screen）避免丢失
+
+---
+
+## 二十、段落导航（v9 新增）
+
+### 功能说明
+- 播放进度区域显示段落下拉选择框 + 进度提示，同一行显示
+- 左边：自定义下拉框（▶ 第X段），已听段落可跳回，未听段落不可跳转
+- 右边：纯文字进度提示（已恢复上次进度：第 X/Y 段），无背景框
+
+### 进度记忆
+- 用 localStorage 存储每本书听到第几段
+- 下次打开自动从上次位置继续
+
+---
+
+## 二十一、字体规范（v9 新增）
+
+使用小米 MiSans 字体，通过 CDN 引入：
+```
+https://cdn.jsdelivr.net/npm/misans@4.0.0/lib/Normal/MiSans-Normal.min.css
+```
+
+字重规范：
+- 副标题（告别机械声）：font-weight: 300
+- 正文、说明文字：font-weight: 400
+- 按钮、下拉框、标签：font-weight: 500
+- 卡片标题：font-weight: 600
+- App 主标题（AI读者）：font-weight: 700
+
+---
+
+## 二十二、生成等待动画（v9 新增）
+
+- 点击"生成并播放"后，状态提示区域显示旋转雪花图标 + 文字呼吸动画
+- 颜色：主题蓝 #007aff
+- 开始正常播放后动画消失，恢复普通文字
+
+---
+
+## 二十三、VPS 部署信息
 
 | 项目 | 内容 |
 |------|------|
@@ -312,22 +374,23 @@ scp /Users/majun/ai-program/ai-reader/cookies.txt tokyo:~/ai-reader/cookies.txt
 
 ---
 
-## 二十、主要代码文件
+## 二十四、主要代码文件
 
 | 文件 | 说明 |
 |------|------|
 | public/app.js | 前端主逻辑 |
 | public/audioEngine.js | 音频引擎（IndexedDB缓存） |
+| public/style.css | 样式（MiSans字体、书架抽屉、段落导航） |
 | server.js | Node.js 后端 |
 | tts_edge.py | Edge TTS |
-| rewrite_cache.json | 改写缓存 |
+| rewrite_cache.json | 改写缓存（已加入 .gitignore） |
 | tts_cache/ | TTS 音频缓存目录 |
-| cookies.txt | YouTube 认证 cookies |
+| cookies.txt | YouTube 认证 cookies（已加入 .gitignore） |
 | .env | 环境变量（OPENAI_API_KEY） |
 
 ---
 
-## 二十一、当前功能完成度
+## 二十五、当前功能完成度
 
 已实现：
 - AI Rewrite
@@ -344,18 +407,23 @@ scp /Users/majun/ai-program/ai-reader/cookies.txt tokyo:~/ai-reader/cookies.txt
 - 定时关闭
 - Smart Cleaner
 - VPS 部署
+- Railway 部署
+- 书架功能（最多10本，Bottom Sheet）
+- 段落导航（下拉菜单 + 进度记忆）
+- MiSans 字体 + 整体 UI 优化
+- 生成等待动画
 
-**完成度：约 95%**
+**完成度：约 98%**
 
 ---
 
-## 二十二、当前最大瓶颈
+## 二十六、当前最大瓶颈
 
 启动时间受 LLM Rewrite latency 影响：20~40 秒
 
 ---
 
-## 二十三、开发优先级
+## 二十七、开发优先级
 
 ```
 稳定性 → 播放连续性 → 启动速度 → 功能扩展
@@ -363,6 +431,6 @@ scp /Users/majun/ai-program/ai-reader/cookies.txt tokyo:~/ai-reader/cookies.txt
 
 ---
 
-## 二十四、新对话开始时的背景说明模板
+## 二十八、新对话开始时的背景说明模板
 
 > 我有一个部署在 207.148.105.250:3000 的 Node.js 项目 ai-reader，用 PM2 管理，GitHub 仓库：https://github.com/mjtouming/ai-reader，我想问关于 xxx 的问题。

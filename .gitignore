@@ -5,3 +5,4 @@ tts_cache/
 uploads/
 rewrite_cache.json
 cookies.txt
+.claude/

@@ -110,7 +110,7 @@ body{
 
 .card-title{
   font-size: 17px;
-  font-weight: 800;
+  font-weight: 700;
   margin: 0;
   letter-spacing: .2px;
 }
@@ -266,7 +266,7 @@ input.file{
 .progress{ margin-top: 10px; }
 progress{
   width: 100%;
-  height: 8px;
+  height: 6px;
   margin-top: 10px;
   border: none;
   border-radius: 999px;
@@ -325,10 +325,29 @@ progress::-webkit-progress-value{
   padding: 0 16px;
 }
 
-.player-title{
+.player-meta{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  min-height: 18px;
+}
+
+.player-book-title{
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.player-chunk-info{
   font-size: 12px;
-  color: rgba(15,23,42,.55);
-  margin-bottom: 8px;
+  color: rgba(15,23,42,.45);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 audio{ width: 100%; border-radius: 14px; }
@@ -619,4 +638,92 @@ audio{ width: 100%; border-radius: 14px; }
     left:0; right:0; bottom:0;
     border-radius:0;
   }
+}
+/* ===== 设置折叠面板 ===== */
+.settings-card{
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-toggle{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: inherit;
+  transition: background .15s;
+}
+.settings-toggle:hover{ background: rgba(15,23,42,.02); }
+.settings-toggle:active{ background: rgba(15,23,42,.05); }
+
+.settings-arrow{
+  font-size: 13px;
+  color: rgba(15,23,42,.4);
+  transition: transform .2s ease;
+}
+.settings-arrow.open{
+  transform: rotate(90deg);
+}
+
+.settings-body{
+  display: none;
+  padding: 0 22px 20px;
+}
+.settings-body.open{
+  display: block;
+}
+
+/* ===== 完成 badge ===== */
+.status-done-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  background: rgba(34,197,94,.12);
+  color: #16a34a;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(34,197,94,.2);
+}
+
+/* ===== 正在播放书名（header右上角） ===== */
+.now-playing-title{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+  border: none;
+  padding: 0;
+  width: 5em;
+  flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .3s ease, transform .3s ease;
+  pointer-events: none;
+  position: relative;
+}
+.now-playing-title.visible{
+  opacity: 1;
+  transform: translateY(0);
+}
+.now-playing-title .marquee-inner{
+  display: inline-block;
+  white-space: nowrap;
+}
+.now-playing-title .marquee-inner.scrolling{
+  animation: marquee-scroll 6s linear infinite;
+}
+@keyframes marquee-scroll{
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }

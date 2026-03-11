@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260310-6';
+import { generateAudioFromText } from './audioEngine.js?v=20260311-9';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -16,9 +16,20 @@ const progressBar = document.getElementById("progressBar");
 const chunkNav    = document.getElementById("chunkNav");
 const sleepTimer  = document.getElementById("sleepTimer");
 
+const VOICE_MANUAL_KEY = "ai_reader_voice_manual";
+
+voiceSelect.addEventListener("change", () => {
+  localStorage.setItem(VOICE_MANUAL_KEY, voiceSelect.value);
+});
+
 modeSelect.addEventListener("change", () => {
-  if (modeSelect.value === "original") voiceSelect.value = "young_female";
-  if (modeSelect.value === "story")    voiceSelect.value = "elder_male";
+  const manualVoice = localStorage.getItem(VOICE_MANUAL_KEY);
+  if (manualVoice) {
+    voiceSelect.value = manualVoice;
+  } else {
+    if (modeSelect.value === "original") voiceSelect.value = "young_female";
+    if (modeSelect.value === "story")    voiceSelect.value = "elder_male";
+  }
 });
 
 // ── State ─────────────────────────────────────────────────────
@@ -185,6 +196,9 @@ function loadBook(book) {
 
   saveSession({ chunks, currentIndex, maxReachedIndex });
   renderChunkNav();
+  updateNowPlayingTitle(book.title);
+  const ppBtn = document.getElementById("playPauseBtn");
+  if (ppBtn) ppBtn.innerText = "▶ 播放";
   setStatus(
     `已切换：${book.title}（第 ${currentIndex + 1}/${chunks.length} 段）`,
     "ok",
@@ -286,7 +300,6 @@ function renderChunkNav() {
     const opt = document.createElement("option");
     opt.value = i;
     opt.textContent = i === currentIndex ? `▶ 第 ${i + 1} 段` : `第 ${i + 1} 段`;
-    if (i > maxReachedIndex) opt.disabled = true;
     if (i === currentIndex)  opt.selected = true;
     sel.appendChild(opt);
   }
@@ -314,6 +327,30 @@ async function jumpToChunk(index) {
     if (e?.name === "AbortError") return;
     setStatus("跳转失败 ❌", "bad", { busy: false });
     isAutoPlaying = false;
+  }
+}
+
+// ── Now playing title ────────────────────────────────────────
+function updateNowPlayingTitle(title) {
+  const el = document.getElementById("nowPlayingTitle");
+  if (!el) return;
+  if (title) {
+    // 超过5个字用滚动，否则静止
+    const inner = document.createElement("span");
+    inner.className = "marquee-inner";
+    if (title.length > 5) {
+      // 复制一份文字实现无缝循环
+      inner.textContent = title + "　　" + title;
+      inner.classList.add("scrolling");
+    } else {
+      inner.textContent = title;
+    }
+    el.innerHTML = "";
+    el.appendChild(inner);
+    el.classList.add("visible");
+  } else {
+    el.classList.remove("visible");
+    setTimeout(() => { el.innerHTML = ""; }, 300);
   }
 }
 
@@ -586,6 +623,7 @@ function interruptPlayback(reason = "") {
     currentAudioUrl = null;
   }
 
+  updateNowPlayingTitle(null);
   if (reason) setStatus(reason, "info", { busy: false });
 }
 
@@ -658,6 +696,7 @@ async function playChunk(index, jobId) {
   maxReachedIndex = Math.max(maxReachedIndex, index);
   renderChunkNav();
 
+  updateNowPlayingTitle(currentFileName || (currentBookId && (() => { const s = loadShelf(); const b = s.books.find(x => x.id === currentBookId); return b?.title; })()) || deriveTitle());
   setStatus(`播放第 ${index + 1}/${total} 段`, "ok", {
     busy: true,
     step: index + 1,
@@ -712,6 +751,7 @@ async function preGenerateNext(index, jobId, slot) {
     if (!rewrittenChunks[index] && rewrittenText) {
       rewrittenChunks[index] = rewrittenText;
     }
+
     if (slot === "next") {
       nextAudioUrl = url;
     } else if (slot === "nextNext") {
@@ -1000,7 +1040,8 @@ audioPlayer?.addEventListener("ended", async function () {
     await playChunk(currentIndex, jobId);
   } catch (e) {
     if (e?.name === "AbortError" || String(e?.message || "").includes("aborted")) return;
-    setStatus("下一段生成失败 ❌：" + (e?.message || String(e)), "bad", { busy: false });
+    console.error(e);
+    setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
     isAutoPlaying = false;
   }
 });
@@ -1024,13 +1065,24 @@ window.addEventListener("load", function () {
       restoreTime = session.currentTime;
     }
 
-    // Restore current book id from shelf
+    // Restore current book id from shelf — 用文本 hash 匹配，避免 currentBookId 错位
     const shelf = loadShelf();
-    currentBookId = shelf.currentBookId || null;
+    const sessionText = session.text || "";
+    const sessionHash = sessionText ? hashText(sessionText) : null;
+    const matchedBook = sessionHash ? shelf.books.find(b => b.id === sessionHash) : null;
+    currentBookId = matchedBook ? matchedBook.id : (shelf.currentBookId || null);
+    // 同步修正 shelf.currentBookId
+    if (matchedBook && shelf.currentBookId !== matchedBook.id) {
+      shelf.currentBookId = matchedBook.id;
+      saveShelf(shelf);
+    }
 
     if (chunks.length > 0) {
       isAutoPlaying = false;
       renderChunkNav();
+      // 恢复书名显示
+      const bookForRestore = matchedBook || shelf.books.find(b => b.id === currentBookId);
+      if (bookForRestore) updateNowPlayingTitle(bookForRestore.title);
       setStatus(
         `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
         "ok",
