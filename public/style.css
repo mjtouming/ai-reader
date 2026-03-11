@@ -727,3 +727,12 @@ audio{ width: 100%; border-radius: 14px; }
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
+
+/* ===== 灵听 logo 图片 ===== */
+.logo-img{
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
