@@ -555,8 +555,11 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
   try {
     const dataBuffer = fs.readFileSync(req.file.path);
     const data = await pdfParse(dataBuffer);
-    const text = data.text?.trim() || "";
-    if (text.length < 50) {
+    const raw = data.text?.trim() || "";
+    // 过滤乱码：有效中文/英文字符占比过低视为图片PDF
+    const validChars = (raw.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g) || []).length;
+    const text = raw;
+    if (raw.length < 50 || validChars / Math.max(raw.length, 1) < 0.2) {
       return res.status(422).json({ error: "此 PDF 为图片扫描件，无法提取文字。请使用文字版 PDF，或将内容复制粘贴到文本框。" });
     }
     res.json({ text });
