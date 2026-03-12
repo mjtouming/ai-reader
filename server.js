@@ -555,7 +555,11 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
   try {
     const dataBuffer = fs.readFileSync(req.file.path);
     const data = await pdfParse(dataBuffer);
-    res.json({ text: data.text });
+    const text = data.text?.trim() || "";
+    if (text.length < 50) {
+      return res.status(422).json({ error: "此 PDF 为图片扫描件，无法提取文字。请使用文字版 PDF，或将内容复制粘贴到文本框。" });
+    }
+    res.json({ text });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "PDF 解析失败" });
