@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260311-11';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-2';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -45,10 +45,9 @@ let currentAbort     = null;
 let currentJobId     = 0;
 let currentAudioUrl  = null;
 let currentFileName  = null;
-let nextAudioUrl     = null;
-let nextAbort        = null;
-let nextNextAudioUrl = null;
-let preGeneratingIndex = -1;
+let audioCache       = {};   // index → url
+let preGeneratingSet = new Set();
+const PRE_WINDOW     = 3;    // 预生成窗口大小
 let lastSessionSave  = 0;
 
 // ── Keys ──────────────────────────────────────────────────────
@@ -599,22 +598,12 @@ function interruptPlayback(reason = "") {
     currentAbort = null;
   }
 
-  if (nextAbort) {
-    try { nextAbort.abort(); } catch {}
-    nextAbort = null;
+  // 清空预生成缓存
+  for (const url of Object.values(audioCache)) {
+    try { URL.revokeObjectURL(url); } catch {}
   }
-
-  preGeneratingIndex = -1;
-
-  if (nextAudioUrl) {
-    try { URL.revokeObjectURL(nextAudioUrl); } catch {}
-  }
-  nextAudioUrl = null;
-
-  if (typeof nextNextAudioUrl !== "undefined" && nextNextAudioUrl) {
-    try { URL.revokeObjectURL(nextNextAudioUrl); } catch {}
-  }
-  nextNextAudioUrl = null;
+  audioCache = {};
+  preGeneratingSet.clear();
 
   if (audioPlayer) {
     audioPlayer.pause();
@@ -708,7 +697,7 @@ async function playChunk(index, jobId) {
   });
 
   try {
-    preGenerateNext(index + 1, jobId, "next");
+    fillWindow(index, jobId);
     await audioPlayer.play();
   } catch (e) {
     console.log("play() 被浏览器拒绝或异常:", e);
@@ -723,16 +712,25 @@ async function playChunk(index, jobId) {
   }
 }
 
-async function preGenerateNext(index, jobId, slot) {
+// 填满预生成窗口
+function fillWindow(fromIndex, jobId) {
+  for (let i = fromIndex + 1; i <= fromIndex + PRE_WINDOW; i++) {
+    if (i >= chunks.length) break;
+    if (audioCache[i]) continue;
+    if (preGeneratingSet.has(i)) continue;
+    preGenerateNext(i, jobId);
+  }
+}
+
+async function preGenerateNext(index, jobId) {
   if (index >= chunks.length) return;
-  if (preGeneratingIndex === index) return;
-  preGeneratingIndex = index;
+  if (audioCache[index]) return;
+  if (preGeneratingSet.has(index)) return;
+
+  preGeneratingSet.add(index);
 
   const mode  = modeSelect?.value  || "original";
   const voice = voiceSelect?.value || "young_female";
-
-  const abort = new AbortController();
-  nextAbort = abort;
 
   try {
     const textToSend = rewrittenChunks[index] || chunks[index];
@@ -741,13 +739,16 @@ async function preGenerateNext(index, jobId, slot) {
       textToSend,
       mode,
       voice,
-      abort.signal,
+      null,
       rewrittenChunks[index - 1] || null,
       index + 1,
       chunks.length
     );
 
-    if (jobId !== currentJobId) return;
+    if (jobId !== currentJobId) {
+      preGeneratingSet.delete(index);
+      return;
+    }
 
     const url           = result.url;
     const rewrittenText = result.rewritten;
@@ -756,14 +757,14 @@ async function preGenerateNext(index, jobId, slot) {
       rewrittenChunks[index] = rewrittenText;
     }
 
-    if (slot === "next") {
-      nextAudioUrl = url;
-    } else if (slot === "nextNext") {
-      nextNextAudioUrl = url;
-    }
-    // ended 事件统一驱动，不在这里递归
+    audioCache[index] = url;
+    preGeneratingSet.delete(index);
+
+    // 生成完一段后继续填窗口
+    fillWindow(currentIndex, jobId);
 
   } catch (e) {
+    preGeneratingSet.delete(index);
     if (e?.name === "AbortError") return;
     console.log("preGenerateNext error:", e);
   }
@@ -995,22 +996,19 @@ audioPlayer?.addEventListener("ended", async function () {
   currentIndex += 1;
   saveSession({ currentIndex });
 
-  if (nextAudioUrl) {
-    const url = nextAudioUrl;
+  if (audioCache[currentIndex]) {
+    const url = audioCache[currentIndex];
+    delete audioCache[currentIndex - 1];  // 释放已播放的
 
     if (currentAudioUrl) {
       try { URL.revokeObjectURL(currentAudioUrl); } catch {}
     }
 
-    nextAudioUrl     = nextNextAudioUrl;
-    nextNextAudioUrl = null;
-    currentAudioUrl  = url;
-
+    currentAudioUrl = url;
     audioPlayer.src = url;
     audioPlayer.currentTime = 0;
     audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
 
-    // Update max reached and nav
     maxReachedIndex = Math.max(maxReachedIndex, currentIndex);
     renderChunkNav();
 
@@ -1022,9 +1020,8 @@ audioPlayer?.addEventListener("ended", async function () {
 
     await audioPlayer.play();
 
-    // ended 统一驱动：填满空槽
-    preGeneratingIndex = -1;
-    preGenerateNext(currentIndex + 1, currentJobId, "nextNext");
+    // 滑动窗口，继续填满
+    fillWindow(currentIndex, currentJobId);
 
     return;
   }
