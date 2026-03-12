@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-2';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-3';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -801,6 +801,10 @@ fileInput?.addEventListener("change", async function () {
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        setStatus(data.error || "PDF 解析失败 ❌", "bad", { busy: false });
+        return;
+      }
       textInput.value = data.text || "";
       currentFileName = file.name.replace(/\.[^.]+$/, "");
       setStatus("PDF 已载入 ✅", "ok", { busy: false });
