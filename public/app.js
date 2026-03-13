@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-3';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-4';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -489,7 +489,14 @@ function cleanBookTextForReading(rawText) {
       "^\\s*(ISBN|书号|CIP|版次|印次|定价|字数|开本|装帧|页数|印刷|印刷厂|发行|网址|邮箱|电话)\\s*[:：].*$",
       "^\\s*(版权|版权声明|版权所有|著作权|免责声明|前言|序言|引言|推荐序|出版说明|再版说明)\\s*$",
       "^\\s*©\\s*\\d{4}.*$",
-      "^\\s*All\\s+rights\\s+reserved\\s*.*$"
+      "^\\s*All\\s+rights\\s+reserved\\s*.*$",
+      "^\\s*\\d{3}-\\d+-\\d+-\\d+-\\d+\\s*$",
+      "^\\s*978[\\d\\-]+\\s*$",
+      "^\\s*\\d{4}\\s*年.*(版|次|印).*$",
+      "^\\s*\\d+\\s*mm\\s*[×x*]\\s*\\d+\\s*mm.*$",
+      "^\\s*(北京|上海|广州|深圳|杭州|成都|武汉|南京|天津|西安).*(出版|书局|书店|文化|传媒|印刷).*$",
+      "^\\s*(图书在版编目|CIP数据核字).*$",
+      "^\\s*printed\\s+in\\s+.*$"
     ].join("|"),
     "i"
   );
