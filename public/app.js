@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-7';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-8';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -504,7 +504,7 @@ function cleanBookTextForReading(rawText) {
   const tocLineRe = new RegExp(
     [
       "^\\s*(目录|目\\s*录|contents)\\s*$",
-      "^\\s*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*(章|回|节|卷|篇|部)\\b.*$",
+      "^\\s*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*(章|回|节|卷|篇|部).*$",
       "^\\s*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*(章|回)\\s*$",
       "^\\s*(Chapter|CHAPTER)\\s*\\d+\\b.*$",
       "^\\s*\\d+\\s*[\\.、]\\s*.+$",
@@ -529,7 +529,7 @@ function cleanBookTextForReading(rawText) {
   let cutEnd = -1;
 
   const headLines = cleanedHead;
-  const SEARCH_LIMIT = Math.min(120, headLines.length);
+  const SEARCH_LIMIT = Math.min(300, headLines.length);
 
   for (let i = 0; i < SEARCH_LIMIT; i++) {
     const t = (headLines[i] || "").trim();
@@ -540,7 +540,7 @@ function cleanBookTextForReading(rawText) {
   }
 
   if (cutStart === -1) {
-    const DENSE_LIMIT = Math.min(80, headLines.length);
+    const DENSE_LIMIT = Math.min(200, headLines.length);
     for (let i = 0; i < DENSE_LIMIT; i++) {
       const end = Math.min(i + WINDOW, headLines.length);
       const slice = headLines.slice(i, end);
@@ -563,27 +563,29 @@ function cleanBookTextForReading(rawText) {
   }
 
   if (cutStart !== -1) {
-    let i = cutStart;
-    let looseCount = 0;
+    // 从目录标题开始，跳过所有目录块（支持多个目录）
+    // 遇到非章节行时重置计数，连续3行非章节才认为是真正正文
+    let i = cutStart + 1;
+    let nonTocCount = 0;
+    let lastTocLine = cutStart;
 
     for (; i < headLines.length; i++) {
       const line = (headLines[i] || "").trim();
-
-      if (!line) continue;
+      if (!line) { nonTocCount = 0; continue; }
 
       if (tocLineRe.test(line) || /^(目录|目\s*录|contents)\s*$/i.test(line)) {
-        looseCount = 0;
-        continue;
+        lastTocLine = i;
+        nonTocCount = 0;
       } else {
-        looseCount++;
-        if (looseCount >= 3) {
+        nonTocCount++;
+        if (nonTocCount >= 1) {
           cutEnd = i;
           break;
         }
       }
     }
 
-    if (cutEnd === -1) cutEnd = headLines.length;
+    if (cutEnd === -1) cutEnd = lastTocLine + 1;
 
     const kept = headLines.slice(0, cutStart).concat(headLines.slice(cutEnd));
     cleanedHead = kept;
@@ -591,7 +593,10 @@ function cleanBookTextForReading(rawText) {
 
   const merged = cleanedHead.concat(tail).join("\n");
 
-  return merged
+  // 换行合并：段落内的单个换行合并掉，保留段落分隔
+  const joined = merged.replace(/([^\n])\n([^\n])/g, "$1$2");
+
+  return joined
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

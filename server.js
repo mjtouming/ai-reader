@@ -636,7 +636,9 @@ app.post("/fetch-youtube", async (req, res) => {
       try { fs.unlinkSync(tmpFile); } catch {}
 
       console.log("🎬 字幕提取成功，字符数:", text.length);
-      res.json({ text });
+      // 合并段落内换行：单个换行合并掉，双换行保留为段落分隔
+    const mergedText = text.replace(/([^\n])\n([^\n])/g, "$1$2").replace(/\n{3,}/g, "\n\n");
+    res.json({ text: mergedText });
     } catch (e) {
       res.status(500).json({ error: "字幕解析失败: " + e.message });
     }
