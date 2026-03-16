@@ -636,7 +636,7 @@ app.post("/fetch-youtube", async (req, res) => {
   execFile(ytDlpPath, args, { timeout: 60000 }, (err, stdout, stderr) => {
     if (!fs.existsSync(tmpFile)) {
       console.error("yt-dlp stderr:", stderr);
-      return res.status(500).json({ error: "字幕文件未生成，该视频可能没有英文字幕，或需要登录" });
+      return res.status(500).json({ error: "视频无字幕" });
     }
 
     try {
