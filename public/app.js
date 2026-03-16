@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-6';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-7';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -477,7 +477,7 @@ function cleanBookTextForReading(rawText) {
   const text = (rawText || "").replace(/\r/g, "").trim();
   if (!text) return "";
 
-  const MAX_HEAD_LINES = 220;
+  const MAX_HEAD_LINES = 400;
   const lines = text.split("\n");
 
   const head = lines.slice(0, MAX_HEAD_LINES);
@@ -524,7 +524,7 @@ function cleanBookTextForReading(rawText) {
     cleanedHead.push(head[i]);
   }
 
-  const WINDOW = 18;
+  const WINDOW = 30;
   let cutStart = -1;
   let cutEnd = -1;
 
