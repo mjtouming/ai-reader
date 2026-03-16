@@ -73,7 +73,7 @@ function createCacheKey(text, mode, voice) {
 // ===== 生成音频 =====
 // ✅ 修复1：增加 chunkIndex / totalChunks 参数，传给 /tts
 // ✅ 修复2：返回 { url, rewritten } 对象，而不是直接返回字符串
-export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks) {
+export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks, skipRewrite = false) {
 
   const key = createCacheKey(text, mode, voice);
 
@@ -103,7 +103,8 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
           previous,
           // ✅ 修复1：把段落信息传给服务端
           chunkIndex,
-          totalChunks
+          totalChunks,
+          skipRewrite
         }),
         signal
       });

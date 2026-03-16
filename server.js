@@ -365,6 +365,7 @@ app.post("/tts", async (req, res) => {
     previous,
     chunkIndex,
     totalChunks,
+    skipRewrite,
   } = req.body;
   console.log("MODE:", mode);
   console.log("rewrite previous:", previous ? previous.slice(-60) : "NONE");
@@ -375,7 +376,7 @@ app.post("/tts", async (req, res) => {
       return res.status(400).json({ error: "text is empty" });
     }
 
-    const needRewrite = mode === "story" || mode === "translate" || mode === "announcer" || mode === "original";
+    const needRewrite = !skipRewrite && (mode === "story" || mode === "translate" || mode === "announcer" || mode === "original");
 
     if (needRewrite) {
       const cacheKey = createRewriteKey(inputText, mode || "announcer");

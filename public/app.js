@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-5';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-6';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -654,7 +654,8 @@ async function playChunk(index, jobId) {
       abort.signal,
       rewrittenChunks[index - 1] || null,
       index + 1,
-      chunks.length
+      chunks.length,
+      index === 0  // 第一段跳过改写，直接 TTS
     );
   } catch (e) {
     if (e?.name === "AbortError") {
