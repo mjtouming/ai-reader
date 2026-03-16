@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-4';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-5';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -857,7 +857,7 @@ generateBtn?.addEventListener("click", async function () {
   }
 
   // 识别 YouTube 链接，自动提取字幕
-  const isYouTube = /youtube\.com\/watch|youtu\.be\//.test(text);
+  const isYouTube = /youtube\.com\/(watch|live)|youtu\.be\//.test(text);
   if (isYouTube) {
     setStatus("正在提取 YouTube 字幕...", "info", { busy: true });
     try {
