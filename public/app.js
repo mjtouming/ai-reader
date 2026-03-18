@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-16';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-17';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -1021,7 +1021,6 @@ audioPlayer?.addEventListener("ended", async function () {
   currentIndex += 1;
   saveSession({ currentIndex });
 
-  console.log("ended: currentIndex=", currentIndex, "audioCache keys=", Object.keys(audioCache));
   if (audioCache[currentIndex]) {
     const url = audioCache[currentIndex];
     delete audioCache[currentIndex - 1];  // 释放已播放的
@@ -1068,7 +1067,11 @@ audioPlayer?.addEventListener("ended", async function () {
   } catch (e) {
     if (e?.name === "AbortError" || String(e?.message || "").includes("aborted")) return;
     console.error(e);
-    setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
+    if (e?.name === "NotAllowedError") {
+      setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
+    } else {
+      setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
+    }
     isAutoPlaying = false;
   }
 });
