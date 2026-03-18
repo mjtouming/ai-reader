@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-14';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-15';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -726,7 +726,7 @@ async function playChunk(index, jobId) {
       return;
     }
     // Safari 自动播放被拦截，提示用户手动点击
-    setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
+    setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
     isAutoPlaying = false;
     return;  // 不 throw，避免上层显示"跳转失败"
   }
@@ -1067,7 +1067,7 @@ audioPlayer?.addEventListener("ended", async function () {
   } catch (e) {
     if (e?.name === "AbortError" || String(e?.message || "").includes("aborted")) return;
     console.error(e);
-    setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
+    setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
     isAutoPlaying = false;
   }
 });
@@ -1180,7 +1180,7 @@ window.addEventListener("DOMContentLoaded", () => {
         await generateBtn.click();
       } catch (e) {
         console.log("首次自动生成失败:", e);
-        setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
+        setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
         isAutoPlaying = false;
       }
     }, 800);
