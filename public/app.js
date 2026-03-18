@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-13';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-14';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -1067,7 +1067,7 @@ audioPlayer?.addEventListener("ended", async function () {
   } catch (e) {
     if (e?.name === "AbortError" || String(e?.message || "").includes("aborted")) return;
     console.error(e);
-    setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
+    setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
     isAutoPlaying = false;
   }
 });
