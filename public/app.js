@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-11';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-12';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -328,7 +328,10 @@ async function jumpToChunk(index) {
   try {
     await playChunk(currentIndex, jobId);
   } catch (e) {
-    if (e?.name === "AbortError") return;
+    if (e?.name === "AbortError") {
+      isAutoPlaying = false;
+      return;
+    }
     setStatus("跳转失败 ❌", "bad", { busy: false });
     isAutoPlaying = false;
   }
@@ -959,6 +962,7 @@ playPauseBtn?.addEventListener("click", async function () {
     } catch (e) {
       console.error("恢复播放失败:", e);
       setStatus("恢复播放失败 ❌", "bad");
+      isAutoPlaying = false;
     }
     return;
   }
