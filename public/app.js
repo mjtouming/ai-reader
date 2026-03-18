@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-8';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-9';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -47,6 +47,7 @@ let currentAudioUrl  = null;
 let currentFileName  = null;
 let audioCache       = {};   // index → url
 let preGeneratingSet = new Set();
+let preGenerateAbort = new AbortController();
 const PRE_WINDOW     = 3;    // 预生成窗口大小
 let lastSessionSave  = 0;
 
@@ -610,6 +611,9 @@ function interruptPlayback(reason = "") {
     currentAbort = null;
   }
 
+  // 取消所有预生成请求
+  preGenerateAbort.abort();
+  preGenerateAbort = new AbortController();
   // 清空预生成缓存
   for (const url of Object.values(audioCache)) {
     try { URL.revokeObjectURL(url); } catch {}
@@ -752,7 +756,7 @@ async function preGenerateNext(index, jobId) {
       textToSend,
       mode,
       voice,
-      null,
+      preGenerateAbort.signal,
       rewrittenChunks[index - 1] || null,
       index + 1,
       chunks.length

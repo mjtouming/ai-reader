@@ -138,9 +138,9 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
 
       console.log("TTS 请求失败，准备重试:", attempt);
 
-      // 等待 1 秒再 retry
+      // 等待 3 秒再 retry
       if (attempt < 2) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 3000));
       }
 
     }
