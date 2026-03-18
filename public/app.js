@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-15';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-16';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -1021,6 +1021,7 @@ audioPlayer?.addEventListener("ended", async function () {
   currentIndex += 1;
   saveSession({ currentIndex });
 
+  console.log("ended: currentIndex=", currentIndex, "audioCache keys=", Object.keys(audioCache));
   if (audioCache[currentIndex]) {
     const url = audioCache[currentIndex];
     delete audioCache[currentIndex - 1];  // 释放已播放的
