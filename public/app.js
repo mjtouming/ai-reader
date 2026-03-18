@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-12';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-13';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -716,8 +716,8 @@ async function playChunk(index, jobId) {
     total
   });
 
+  fillWindow(index, jobId);
   try {
-    fillWindow(index, jobId);
     await audioPlayer.play();
   } catch (e) {
     console.log("play() 被浏览器拒绝或异常:", e);
@@ -728,7 +728,7 @@ async function playChunk(index, jobId) {
     // Safari 自动播放被拦截，提示用户手动点击
     setStatus("已生成，点击 ▶ 播放", "ok", { busy: false });
     isAutoPlaying = false;
-    return;
+    return;  // 不 throw，避免上层显示"跳转失败"
   }
 }
 
