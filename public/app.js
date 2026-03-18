@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-10';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-11';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -48,7 +48,7 @@ let currentFileName  = null;
 let audioCache       = {};   // index → url
 let preGeneratingSet = new Set();
 let preGenerateAbort = new AbortController();
-const PRE_WINDOW     = 3;    // 预生成窗口大小
+const PRE_WINDOW     = 2;    // 预生成窗口大小
 let lastSessionSave  = 0;
 
 // ── Keys ──────────────────────────────────────────────────────
