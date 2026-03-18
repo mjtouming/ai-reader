@@ -89,7 +89,7 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
   // ===== 自动 retry =====
   let lastError = null;
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
 
     try {
 
@@ -139,7 +139,7 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
       console.log("TTS 请求失败，准备重试:", attempt);
 
       // 等待 3 秒再 retry
-      if (attempt < 2) {
+      if (attempt < 3) {
         await new Promise(r => setTimeout(r, 3000));
       }
 
