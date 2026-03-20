@@ -1046,11 +1046,17 @@ audioPlayer?.addEventListener("ended", async function () {
     try {
       await audioPlayer.play();
     } catch (e) {
-      if (e?.name === "NotAllowedError") {
-        setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
+      console.log("audioCache play() 失败，重新生成:", e);
+      // play() 失败时回退到 playChunk 重新尝试
+      const jobId = currentJobId;
+      try {
+        await playChunk(currentIndex, jobId);
+      } catch (e2) {
+        if (e2?.name === "AbortError") return;
+        setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
         isAutoPlaying = false;
-        return;
       }
+      return;
     }
 
     // 滑动窗口，继续填满
