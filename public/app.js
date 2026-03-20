@@ -716,7 +716,6 @@ async function playChunk(index, jobId) {
     total
   });
 
-  fillWindow(index, jobId);
   try {
     await audioPlayer.play();
   } catch (e) {
@@ -730,6 +729,8 @@ async function playChunk(index, jobId) {
     isAutoPlaying = false;
     return;
   }
+
+  fillWindow(index, jobId);
 }
 
 // 填满预生成窗口
