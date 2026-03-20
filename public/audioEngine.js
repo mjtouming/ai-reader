@@ -115,9 +115,13 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
       }
 
       // ✅ 修复2：从响应头读取 rewritten 文本（需要服务端配合，见下方说明）
-      const rewritten = response.headers.get("X-Rewritten-Text")
-        ? decodeURIComponent(response.headers.get("X-Rewritten-Text"))
-        : null;
+      let rewritten = null;
+      try {
+        const raw = response.headers.get("X-Rewritten-Text");
+        rewritten = raw ? decodeURIComponent(raw) : null;
+      } catch (e) {
+        console.log("X-Rewritten-Text decode 失败，忽略:", e);
+      }
 
       const audioBlob = await response.blob();
 
