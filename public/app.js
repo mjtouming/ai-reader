@@ -48,7 +48,7 @@ let currentFileName  = null;
 let audioCache       = {};   // index → url
 let preGeneratingSet = new Set();
 let preGenerateAbort = new AbortController();
-const PRE_WINDOW     = 1;    // 预生成窗口大小
+const PRE_WINDOW     = 2;    // 预生成窗口大小
 let lastSessionSave  = 0;
 
 // ── Keys ──────────────────────────────────────────────────────
