@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-17';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-18';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -1043,7 +1043,15 @@ audioPlayer?.addEventListener("ended", async function () {
       total: chunks.length
     });
 
-    await audioPlayer.play();
+    try {
+      await audioPlayer.play();
+    } catch (e) {
+      if (e?.name === "NotAllowedError") {
+        setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
+        isAutoPlaying = false;
+        return;
+      }
+    }
 
     // 滑动窗口，继续填满
     fillWindow(currentIndex, currentJobId);
