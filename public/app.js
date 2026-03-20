@@ -726,9 +726,9 @@ async function playChunk(index, jobId) {
       return;
     }
     // Safari 自动播放被拦截，提示用户手动点击
-    setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
+    setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
     isAutoPlaying = false;
-    return;  // 不 throw，避免上层显示"跳转失败"
+    return;
   }
 }
 
