@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260312-18';
+import { generateAudioFromText } from './audioEngine.js?v=20260312-29';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -491,7 +491,7 @@ function cleanBookTextForReading(rawText) {
     [
       "^\\s*(作者|编者|译者|校注|整理|出品|出版|出版社|出版方|出品方|责任编辑|责任编辑|策划|监制)\\s*[:：].*$",
       "^\\s*(ISBN|书号|CIP|版次|印次|定价|字数|开本|装帧|页数|印刷|印刷厂|发行|网址|邮箱|电话)\\s*[:：].*$",
-      "^\\s*(版权|版权声明|版权所有|著作权|免责声明|前言|序言|引言|推荐序|出版说明|再版说明)\\s*$",
+      "^\\s*(版权|版权声明|版权所有|版权信息|著作权|免责声明|前言|序言|引言|推荐序|出版说明|再版说明)\\s*$",
       "^\\s*©\\s*\\d{4}.*$",
       "^\\s*All\\s+rights\\s+reserved\\s*.*$",
       "^\\s*\\d{3}-\\d+-\\d+-\\d+-\\d+\\s*$",
@@ -535,11 +535,18 @@ function cleanBookTextForReading(rawText) {
   const headLines = cleanedHead;
   const SEARCH_LIMIT = Math.min(300, headLines.length);
 
+  // 找到最后一个目录标题作为起点（支持多目录的书）
   for (let i = 0; i < SEARCH_LIMIT; i++) {
     const t = (headLines[i] || "").trim();
     if (/^(目录|目\s*录|contents)\s*$/i.test(t)) {
-      cutStart = i;
-      break;
+      cutStart = i;  // 不break，继续找，取最后一个
+    }
+  }
+  // 如果cutStart是CONTENTS，往前看一行是否是"目录"
+  if (cutStart > 0) {
+    const prevLine = (headLines[cutStart - 1] || "").trim();
+    if (/^(目录|目\s*录)\s*$/i.test(prevLine)) {
+      cutStart = cutStart - 1;
     }
   }
 
@@ -582,8 +589,8 @@ function cleanBookTextForReading(rawText) {
         nonTocCount = 0;
       } else {
         nonTocCount++;
-        if (nonTocCount >= 1) {
-          cutEnd = i;
+        if (nonTocCount >= 3) {
+          cutEnd = i - 2;
           break;
         }
       }
@@ -597,12 +604,31 @@ function cleanBookTextForReading(rawText) {
 
   const merged = cleanedHead.concat(tail).join("\n");
 
-  // 换行合并：段落内的单个换行合并掉，保留段落分隔
-  const joined = merged.replace(/([^\n])\n([^\n])/g, "$1$2");
+  // 换行合并：只合并行尾不是句号等标点的行（PDF行内断字），保留段落分隔
+  const joined = merged.replace(/([^。！？!?\n])\n([^\n])/g, "$1$2");
 
-  return joined
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const result = joined.replace(/\n{3,}/g, "\n\n").trim();
+
+  // 兜底清理：如果开头还有版权/目录残留，找第一个真正的正文段落
+  const resultLines = result.split("\n");
+  const skipRe = /ISBN|©|版权|出版|印刷|CIP|书号|定价|\d{4}年|\d+mm|CONTENTS|责任编辑|策划|封面|发行|邮编|电话|社址/i;
+  let firstContent = -1;
+  for (let i = 0; i < Math.min(100, resultLines.length); i++) {
+    const l = resultLines[i].trim();
+    if (l.length > 30 && !skipRe.test(l)) {
+      const zhCount = (l.match(/[\u4e00-\u9fa5]/g) || []).length;
+      if (zhCount / l.length > 0.7) {
+        firstContent = i;
+        break;
+      }
+    }
+  }
+  // 只有当前面有大量非正文内容时才截断（超过5行才处理）
+  if (firstContent >= 1) {
+    return resultLines.slice(firstContent).join("\n").trim();
+  }
+
+  return result;
 }
 
 // ── Playback core ─────────────────────────────────────────────

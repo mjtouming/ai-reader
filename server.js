@@ -551,16 +551,24 @@ app.post("/upload-word", upload.single("file"), async (req, res) => {
 app.post("/upload-pdf", upload.single("file"), async (req, res) => {
   console.log("收到 PDF 上传请求");
   try {
-    const dataBuffer = fs.readFileSync(req.file.path);
-    const data = await pdfParse(dataBuffer);
-    const raw = data.text?.trim() || "";
-    // 过滤乱码：有效中文/英文字符占比过低视为图片PDF
-    const validChars = (raw.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g) || []).length;
-    const text = raw;
-    if (raw.length < 50 || validChars / Math.max(raw.length, 1) < 0.2) {
-      return res.status(422).json({ error: "此 PDF 为图片扫描件，无法提取文字 ❌" });
+    const scriptPath = path.join(__dirname, "pdf_extract.py");
+    let pythonPath = process.env.PYTHON_PATH ||
+      (fs.existsSync(path.join(__dirname, ".venv", "bin", "python"))
+        ? path.join(__dirname, ".venv", "bin", "python") : "python3");
+
+    const { stdout, stderr } = await new Promise((resolve, reject) => {
+      const { execFile } = require("child_process");
+      execFile(pythonPath, [scriptPath, req.file.path], { timeout: 60000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) reject(err);
+        else resolve({ stdout, stderr });
+      });
+    });
+
+    const result = JSON.parse(stdout.trim());
+    if (result.error) {
+      return res.status(422).json({ error: result.error });
     }
-    res.json({ text });
+    res.json({ text: result.text });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "PDF 解析失败" });
