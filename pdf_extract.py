@@ -7,8 +7,9 @@ path = sys.argv[1]
 try:
     with pdfplumber.open(path) as pdf:
         pages = []
-        for page in pdf.pages[:500]:  # 最多提取前500页
-            t = page.extract_text()
+        for page in pdf.pages:
+            # 只提取文字，跳过复杂布局分析，速度更快
+            t = page.extract_text(x_tolerance=3, y_tolerance=3)
             if t:
                 pages.append(t)
         text = '\n'.join(pages)
