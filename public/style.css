@@ -736,3 +736,55 @@ audio{ width: 100%; border-radius: 14px; }
   object-fit: cover;
   flex-shrink: 0;
 }
+
+/* ===== 深色模式 ===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg0: #0f1117;
+    --bg1: #1a1d27;
+    --card: #1e2130;
+    --text: #e8eaf0;
+    --muted: #8b95a8;
+    --line: rgba(255,255,255,.08);
+    --shadow: 0 1px 4px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.05);
+  }
+
+  body {
+    background: linear-gradient(160deg, #0f1117 0%, #141720 100%);
+  }
+
+  .card {
+    background: var(--card);
+  }
+
+  select, textarea, input {
+    background: #252838;
+    color: var(--text);
+    border-color: rgba(255,255,255,.1);
+  }
+
+  .btn {
+    background: rgba(255,255,255,.05);
+    color: var(--text);
+  }
+
+  .btn:hover {
+    background: rgba(255,255,255,.08);
+  }
+
+  .status-bar {
+    background: rgba(30,33,48,.95);
+  }
+
+  .book-item {
+    background: #252838;
+  }
+
+  .book-item:hover {
+    background: #2d3145;
+  }
+
+  progress::-webkit-progress-bar {
+    background: rgba(255,255,255,.08);
+  }
+}
