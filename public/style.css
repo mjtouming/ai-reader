@@ -763,4 +763,9 @@ audio{ width: 100%; border-radius: 14px; }
   .book-item { background: #252838; }
   .book-item:hover { background: #2d3145; }
   progress::-webkit-progress-bar { background: rgba(255,255,255,.08); }
+  input.file {
+    background: #252838 !important;
+    border-color: rgba(255,255,255,.12) !important;
+    color: #e8eaf0 !important;
+  }
 }
