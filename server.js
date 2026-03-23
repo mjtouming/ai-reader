@@ -558,7 +558,7 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
 
     const { stdout, stderr } = await new Promise((resolve, reject) => {
       const { execFile } = require("child_process");
-      execFile(pythonPath, [scriptPath, req.file.path], { timeout: 60000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+      execFile(pythonPath, [scriptPath, req.file.path], { timeout: 120000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) reject(err);
         else resolve({ stdout, stderr });
       });
