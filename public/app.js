@@ -693,7 +693,7 @@ async function playChunk(index, jobId) {
       rewrittenChunks[index - 1] || null,
       index + 1,
       chunks.length,
-      index === 0  // 第一段跳过改写，直接 TTS
+      index === 0 && (modeSelect?.value || 'original') === 'original'  // 仅原文模式第一段跳过改写
     );
   } catch (e) {
     if (e?.name === "AbortError") {
