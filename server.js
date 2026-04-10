@@ -444,7 +444,7 @@ ${inputText}
 `.trim();
 
         const rewriteResponse = await fetch(
-          "https://api.openai.com/v1/chat/completions",
+          "https://api.deepseek.com/v1/chat/completions",
           {
             method: "POST",
             headers: {
@@ -452,7 +452,7 @@ ${inputText}
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: "gpt-4o-mini",
+              model: "deepseek-chat",
               messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userContent },
@@ -656,3 +656,16 @@ app.post("/fetch-youtube", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
+// HTTPS 直连
+const https = require("https");
+try {
+  const httpsOptions = {
+    key: fs.readFileSync("/etc/letsencrypt/live/sona.solonova.top/privkey.pem"),
+    cert: fs.readFileSync("/etc/letsencrypt/live/sona.solonova.top/fullchain.pem"),
+  };
+  https.createServer(httpsOptions, app).listen(443, "0.0.0.0", () => {
+    console.log("HTTPS running on https://sona.solonova.top");
+  });
+} catch(e) {
+  console.log("HTTPS 启动失败:", e.message);
+}
