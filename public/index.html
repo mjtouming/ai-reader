@@ -41,10 +41,10 @@
 
         <div class="text-stack">
           <div class="brand-name">
-            <span class="sona-title">Sona</span>
-            <span class="ch-name">灵听</span>
+            <span class="sona-title">灵听</span>
+            <span class="ch-name">· AI听书</span>
           </div>
-          <div class="tagline">AI-POWERED AUDIOBOOK STUDIO</div>
+          <div class="tagline">告别机械声，古文/外语自动翻译</div>
         </div>
 
         <div id="nowPlayingTitle" class="now-playing-title"></div>
@@ -66,33 +66,33 @@
         <div class="settings-row">
 
           <div class="ctrl-col">
-            <div class="ctrl-label">MODE</div>
+            <div class="ctrl-label">朗读模式</div>
             <select id="modeSelect" class="ctrl-select">
               <option value="original">原文朗读</option>
-              <option value="story" selected>Story Rewrite</option>
-              <option value="translate">翻译白话</option>
+              <option value="story" selected>改成故事</option>
+              <option value="translate">翻译为白话</option>
             </select>
           </div>
 
           <div class="ctrl-sep"></div>
 
           <div class="ctrl-col">
-            <div class="ctrl-label">VOICE</div>
+            <div class="ctrl-label">朗读者</div>
             <select id="voiceSelect" class="ctrl-select">
-              <option value="young_female">少女</option>
-              <option value="girl">青年女</option>
+              <option value="young_female">青年女</option>
+              <option value="girl">少女</option>
               <option value="young_male">青年男</option>
-              <option value="elder_male" selected>Narrator</option>
+              <option value="elder_male" selected>中老年男</option>
             </select>
           </div>
 
           <div class="ctrl-sep"></div>
 
           <div class="ctrl-col">
-            <div class="ctrl-label">SPEED</div>
+            <div class="ctrl-label">语速</div>
             <select id="speedSelect" class="ctrl-select">
               <option value="0.8">0.8x</option>
-              <option value="1" selected>1.0x</option>
+              <option value="1" selected>1x</option>
               <option value="1.2">1.2x</option>
               <option value="1.5">1.5x</option>
             </select>
@@ -104,7 +104,7 @@
 
       <!-- Content Area -->
       <div class="content-area">
-        <div class="section-title">文字 / YouTube Link</div>
+        <div class="section-title">文字/YouTube链接</div>
         <div class="text-box">
           <label class="sr-only" for="textInput">正文</label>
           <textarea id="textInput" placeholder="粘贴文章 / YouTube 链接，或上传文件…"></textarea>
@@ -115,16 +115,16 @@
       <div class="actions-section">
         <button id="generateBtn" class="btn-generate">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="white" style="flex-shrink:0"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
-          Generate &amp; Play
+          生成并播放
         </button>
         <button id="playPauseBtn" class="btn-outline" type="button">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><polygon points="5,3 19,12 5,21"/></svg>
-          Play
+          播放
         </button>
         <div class="timer-wrap">
           <button id="timerBtn" class="btn-outline" type="button">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
-            Timer
+            定时关闭
           </button>
           <!-- hidden real select for app.js compat -->
           <select id="sleepTimer" class="sr-only">
@@ -162,8 +162,8 @@
       <!-- Upload Section -->
       <div class="upload-section">
         <div class="upload-hd">
-          <div class="upload-title">Upload File</div>
-          <div class="upload-hint">Large files: test small segments first</div>
+          <div class="upload-title">上传文件</div>
+          <div class="upload-hint">提示：大文件建议先测试小段</div>
         </div>
         <label class="drop-zone" for="fileInput">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -171,8 +171,8 @@
             <polyline points="17 8 12 3 7 8"/>
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
-          <span class="drop-text">Drop files here or click to browse</span>
-          <span class="drop-formats">PDF · TXT · EPUB</span>
+          <span class="drop-text">点击或拖拽文件到此处</span>
+          <span class="drop-formats">PDF · TXT · DOCX</span>
         </label>
         <input type="file" id="fileInput" accept=".txt,.docx,.pdf" class="sr-only">
       </div>
@@ -253,13 +253,12 @@
           </div>
           <span id="playerSpeedLabel" class="speed-label">1.0×</span>
           <div class="right-icons">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-            </svg>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-              <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-            </svg>
+            <button class="player-shelf-btn" id="playerShelfBtn" title="书架">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -375,8 +374,16 @@
           if (sleepTimer) { sleepTimer.value = val; sleepTimer.dispatchEvent(new Event('change')); }
           timerDropdown.classList.add('hidden');
           const icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg> ';
-          timerBtn.innerHTML = icon + (val === '0' ? 'Timer' : btn.textContent.trim());
+          timerBtn.innerHTML = icon + (val === '0' ? '定时关闭' : btn.textContent.trim());
         });
+      });
+    }
+
+    // 播放器里的目录按钮 → 打开书架
+    const playerShelfBtn = document.getElementById('playerShelfBtn');
+    if (playerShelfBtn) {
+      playerShelfBtn.addEventListener('click', () => {
+        document.getElementById('shelfBtn')?.click();
       });
     }
 

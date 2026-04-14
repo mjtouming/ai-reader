@@ -756,6 +756,17 @@ progress::-moz-progress-bar      { background: #000; }
 }
 .right-icons svg { cursor: pointer; opacity: .7; transition: opacity .12s; }
 .right-icons svg:hover { opacity: 1; }
+.player-shelf-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  opacity: .7;
+  transition: opacity .12s;
+}
+.player-shelf-btn:hover { opacity: 1; }
 
 /* ===== PC: phone frame ===== */
 @media (min-width: 900px) {
