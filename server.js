@@ -43,6 +43,27 @@ const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: "uploads/" });
 
 /** ====== 工具：运行 edge-tts 脚本并生成 mp3 ====== */
+
+async function runFishAudioTTS({ inputText, outFile }) {
+  const apiKey = process.env.FISH_AUDIO_API_KEY;
+  const response = await fetch("https://api.fish.audio/v1/tts", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      text: inputText,
+      reference_id: "54a5170264694bfc8e9ad98df7bd89c3",
+      format: "mp3",
+      streaming: false
+    })
+  });
+  if (!response.ok) throw new Error("Fish Audio API error: " + response.status);
+  const buffer = await response.arrayBuffer();
+  fs.writeFileSync(outFile, Buffer.from(buffer));
+}
+
 function runEdgeTTS({ inputText, voiceKey, outFile }) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, "tts_edge.py");
@@ -502,11 +523,16 @@ ${inputText}
     }
 
     if (needGenerate) {
-      await runEdgeTTS({
-        inputText,
-        voiceKey: voice || "young_female",
-        outFile,
-      });
+      const ttsProvider = process.env.TTS_PROVIDER || "edge";
+      if (ttsProvider === "fish") {
+        await runFishAudioTTS({ inputText, outFile });
+      } else {
+        await runEdgeTTS({
+          inputText,
+          voiceKey: voice || "young_female",
+          outFile,
+        });
+      }
     }
 
     if (!fs.existsSync(outFile) || fs.statSync(outFile).size === 0) {
