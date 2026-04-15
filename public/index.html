@@ -420,12 +420,8 @@
       }
       navigator.mediaSession.setActionHandler('previoustrack', () => { skipBackBtn?.click(); });
       navigator.mediaSession.setActionHandler('nexttrack',     () => { skipFwdBtn?.click(); });
-      navigator.mediaSession.setActionHandler('seekbackward', (d) => {
-        if (audio) audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10));
-      });
-      navigator.mediaSession.setActionHandler('seekforward', (d) => {
-        if (audio) audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10));
-      });
+      navigator.mediaSession.setActionHandler('seekbackward', null);
+      navigator.mediaSession.setActionHandler('seekforward',  null);
     }
   })();
   </script>
