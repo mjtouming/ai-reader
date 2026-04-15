@@ -39,7 +39,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 20px 32px 12px;
+  padding: 40px 32px 12px;
 }
 
 .logo-mark {
@@ -770,11 +770,17 @@ progress::-moz-progress-bar      { background: #000; }
 }
 .player-shelf-btn:hover { opacity: 1; }
 
-/* 书架按钮：右下角绝对定位，独立于控制栏 */
+/* controls-wrap：为书架按钮提供定位容器 */
+.controls-wrap {
+  position: relative;
+}
+
+/* 书架按钮：右侧绝对定位，垂直居中对齐控制栏 */
 .player-shelf-corner {
   position: absolute;
-  bottom: 18px;
-  right: 24px;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   opacity: .55;
 }
 
