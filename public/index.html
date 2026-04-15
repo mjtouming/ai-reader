@@ -328,6 +328,20 @@
       mainPlayBtn.addEventListener('click', () => playPauseBtn.click());
     }
 
+    // 拦截 app.js 的 emoji innerText，替换为简洁 SVG 图标
+    if (playPauseBtn) {
+      const PPPLAY_HTML  = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;vertical-align:middle"><polygon points="5,3 19,12 5,21"/></svg> 播放';
+      const PPPAUSE_HTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;vertical-align:middle"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 暂停';
+      new MutationObserver(() => {
+        const t = playPauseBtn.textContent.trim();
+        if (t.includes('暂停') && !playPauseBtn.querySelector('svg')) {
+          playPauseBtn.innerHTML = PPPAUSE_HTML;
+        } else if (t.includes('播放') && !playPauseBtn.querySelector('svg')) {
+          playPauseBtn.innerHTML = PPPLAY_HTML;
+        }
+      }).observe(playPauseBtn, { childList: true, subtree: true, characterData: true });
+    }
+
     // Skip prev/next via chunkNav select
     function getChunkSel() { return document.querySelector('#chunkNav select'); }
     if (skipBackBtn) {
