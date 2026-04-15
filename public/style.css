@@ -614,6 +614,7 @@ progress::-moz-progress-bar      { background: #000; }
 
 .player-inner {
   padding: 14px 24px 18px;
+  position: relative;
 }
 
 .player-meta {
@@ -768,6 +769,14 @@ progress::-moz-progress-bar      { background: #000; }
   transition: opacity .12s;
 }
 .player-shelf-btn:hover { opacity: 1; }
+
+/* 书架按钮：右下角绝对定位，独立于控制栏 */
+.player-shelf-corner {
+  position: absolute;
+  bottom: 18px;
+  right: 24px;
+  opacity: .55;
+}
 
 /* ===== PC: phone frame ===== */
 @media (min-width: 900px) {
