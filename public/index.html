@@ -399,29 +399,18 @@
 
     // Media Session API — 锁屏/控制中心显示上一段/下一段
     if ('mediaSession' in navigator) {
+      // 固定显示"灵听"，不暴露书名
       navigator.mediaSession.metadata = new MediaMetadata({
         title: '灵听',
         artist: 'AI听书',
         artwork: [{ src: 'apple-touch-icon.png', sizes: '192x192', type: 'image/png' }]
       });
-      // 更新锁屏标题为当前段落
-      function updateMediaMeta() {
-        const sel = document.querySelector('#chunkNav select');
-        const title = sel ? `第 ${parseInt(sel.value) + 1} 段` : '灵听';
-        const nowPlaying = document.getElementById('nowPlayingTitle');
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: nowPlaying?.textContent?.trim() || title,
-          artist: 'AI听书 · 灵听',
-          artwork: [{ src: 'apple-touch-icon.png', sizes: '192x192', type: 'image/png' }]
-        });
-      }
-      if (audio) {
-        audio.addEventListener('play', updateMediaMeta);
-      }
-      navigator.mediaSession.setActionHandler('previoustrack', () => { skipBackBtn?.click(); });
-      navigator.mediaSession.setActionHandler('nexttrack',     () => { skipFwdBtn?.click(); });
-      navigator.mediaSession.setActionHandler('seekbackward', null);
-      navigator.mediaSession.setActionHandler('seekforward',  null);
+      // 注册上一段/下一段，各自包一层 try-catch 防止 iOS 异常中断
+      try { navigator.mediaSession.setActionHandler('previoustrack', () => { skipBackBtn?.click(); }); } catch(e) {}
+      try { navigator.mediaSession.setActionHandler('nexttrack',     () => { skipFwdBtn?.click(); }); } catch(e) {}
+      // 明确禁用 seek ±10s，让 iOS 显示 prev/next 而非 seek 按钮
+      try { navigator.mediaSession.setActionHandler('seekbackward', null); } catch(e) {}
+      try { navigator.mediaSession.setActionHandler('seekforward',  null); } catch(e) {}
     }
   })();
   </script>
