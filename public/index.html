@@ -4,29 +4,53 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
   <title>灵听</title>
-  <!-- TEST123 -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/misans@4.0.0/lib/Normal/MiSans-Normal.min.css">
-  <link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/misans@4.0.0/lib/Normal/MiSans-Bold.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Geist+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=20260323-1" />
+  <link rel="stylesheet" href="style.css?v=20260414-1" />
 </head>
 
 <body>
   <div class="app">
     <div class="wrap">
 
+      <!-- Header -->
       <header class="top">
-        <div class="brand">
-          <img src="icon-app.png" class="logo-img" alt="灵听">
-          <div>
-            <h1 class="title">灵听 · AI听书</h1>
-            <p class="sub">告别机械声，古文/外语自动翻译</p>
-          </div>
+        <div class="logo-mark">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+            <defs>
+              <linearGradient id="pg1" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#3B82F6"/>
+                <stop offset="1" stop-color="#60A5FA"/>
+              </linearGradient>
+              <linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#60A5FA"/>
+                <stop offset="1" stop-color="#93C5FD"/>
+              </linearGradient>
+            </defs>
+            <!-- left page -->
+            <path d="M2 5 L16 3 L16 27 L2 29 Z" fill="url(#pg1)"/>
+            <!-- right page -->
+            <path d="M20 5 L34 3 L34 27 L20 29 Z" fill="url(#pg2)"/>
+            <!-- play button -->
+            <polygon points="14,12 24,18 14,24" fill="white"/>
+          </svg>
         </div>
+
+        <div class="text-stack">
+          <div class="brand-name">
+            <span class="sona-title">灵听</span>
+            <span class="ch-name">· AI听书</span>
+          </div>
+          <div class="tagline">告别机械声，古文/外语自动翻译</div>
+        </div>
+
         <div id="nowPlayingTitle" class="now-playing-title"></div>
+
         <button id="shelfBtn" class="shelf-btn" title="书架">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="4" height="18" rx="1"/>
             <rect x="8" y="7" width="4" height="14" rx="1"/>
             <rect x="14" y="2" width="4" height="19" rx="1"/>
@@ -36,88 +60,126 @@
         </button>
       </header>
 
- <!-- 卡片 1：模式 + 朗读者 + 语速 -->
-<section class="card">
-  <div class="grid3">
-    <div class="field modeField">
-      <label for="modeSelect">朗读模式</label>
-      <select id="modeSelect" class="chunk-select">
-        <option value="original">原文朗读</option>
-        <option value="story" selected>改成故事（更口语，有趣）</option>
-        <option value="translate">翻译为白话/中文</option>
-      </select>
-    </div>
+      <!-- Settings Row -->
+      <div class="settings-outer">
+        <div class="settings-divider"></div>
+        <div class="settings-row">
 
-    <div class="field voiceField">
-      <label for="voiceSelect">朗读者</label>
-      <select id="voiceSelect" class="chunk-select">
-  <option value="young_female">青年女</option>
-  <option value="girl">少女</option>
-  <option value="young_male">青年男</option>
-  <option value="elder_male" selected>中老年男</option>
-</select>
-    </div>
+          <div class="ctrl-col">
+            <div class="ctrl-label">朗读模式</div>
+            <select id="modeSelect" class="ctrl-select">
+              <option value="original">原文朗读</option>
+              <option value="story" selected>改成故事</option>
+              <option value="translate">翻译为白话</option>
+            </select>
+          </div>
 
-    <div class="field speedField">
-      <label for="speedSelect">语速</label>
-      <select id="speedSelect" class="chunk-select">
-        <option value="0.8">0.8x</option>
-        <option value="1" selected>1x</option>
-        <option value="1.2">1.2x</option>
-        <option value="1.5">1.5x</option>
-      </select>
-    </div>
-  </div>
-</section>
+          <div class="ctrl-sep"></div>
 
-<!-- 卡片 4：正文 + 操作 -->
-      <section class="card">
-        <div class="card-hd">
-          <div class="card-title">文字/YouTube链接</div>
+          <div class="ctrl-col">
+            <div class="ctrl-label">朗读者</div>
+            <select id="voiceSelect" class="ctrl-select">
+              <option value="young_female">青年女</option>
+              <option value="girl">少女</option>
+              <option value="young_male">青年男</option>
+              <option value="elder_male" selected>中老年男</option>
+            </select>
+          </div>
+
+          <div class="ctrl-sep"></div>
+
+          <div class="ctrl-col">
+            <div class="ctrl-label">语速</div>
+            <select id="speedSelect" class="ctrl-select">
+              <option value="0.8">0.8x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.2">1.2x</option>
+              <option value="1.5">1.5x</option>
+            </select>
+          </div>
+
         </div>
+        <div class="settings-divider"></div>
+      </div>
 
-        <label class="sr-only" for="textInput">正文</label>
-        <textarea id="textInput" placeholder="粘贴文章/YouTube链接，或上传文件…"></textarea>
+      <!-- Content Area -->
+      <div class="content-area">
+        <div class="section-title">文字/YouTube链接</div>
+        <div class="text-box">
+          <label class="sr-only" for="textInput">正文</label>
+          <textarea id="textInput" placeholder="粘贴文章 / YouTube 链接，或上传文件…"></textarea>
+        </div>
+      </div>
 
-        <div class="actions">
-          <button id="generateBtn" class="btn primary">生成并播放</button>
-
-          <button id="playPauseBtn" class="btn secondary playpause" type="button">
-          ▶ 播放
+      <!-- Actions Section -->
+      <div class="actions-section">
+        <button id="generateBtn" class="btn-generate">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="white" style="flex-shrink:0"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+          生成并播放
+        </button>
+        <button id="playPauseBtn" class="btn-outline" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><polygon points="5,3 19,12 5,21"/></svg>
+          播放
+        </button>
+        <div class="timer-wrap">
+          <button id="timerBtn" class="btn-outline" type="button">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+            定时关闭
           </button>
-
-         <select id="sleepTimer" class="sleep-select chunk-select">
-            <option value="0">定时关闭</option>
+          <!-- hidden real select for app.js compat -->
+          <select id="sleepTimer" class="sr-only">
+            <option value="0">关闭定时</option>
             <option value="600">10 分钟</option>
             <option value="1800">30 分钟</option>
             <option value="3600">60 分钟</option>
             <option value="end">本段结束</option>
-         </select>
+          </select>
+          <div id="timerDropdown" class="timer-dropdown hidden">
+            <button class="timer-option" data-val="600">10 分钟</button>
+            <button class="timer-option" data-val="1800">30 分钟</button>
+            <button class="timer-option" data-val="3600">60 分钟</button>
+            <button class="timer-option" data-val="end">本段结束</button>
+            <button class="timer-option" data-val="0">关闭定时</button>
+          </div>
+        </div>
       </div>
 
-       <div class="progress">
-  <progress id="progressBar" value="0" max="100"></progress>
-  <div class="progress-row">
-    <div id="chunkNav" class="chunk-nav"></div>
-    <div id="statusText" class="status info">就绪</div>
-  </div>
-</div>
-      </section>
+      <!-- Section Divider -->
+      <div class="section-divider"></div>
 
-      <!-- 卡片 2：上传 -->
-      <section class="card">
-        <div class="card-hd">
-         <div class="card-title">
-            上传文件
-            <span class="inline-hint">提示：大文件建议先测试小段</span>
-         </div>
-       </div>
+      <!-- Progress Section -->
+      <div class="progress-section">
+        <div class="progress-top">
+          <div id="chunkNav" class="chunk-nav"></div>
+          <div id="statusText" class="status info">就绪</div>
+        </div>
+        <progress id="progressBar" value="0" max="100"></progress>
+      </div>
 
-        <label class="sr-only" for="fileInput">选择文件</label>
-        <input class="file" type="file" id="fileInput" accept=".txt,.docx,.pdf">
-      </section>
+      <!-- Section Divider -->
+      <div class="section-divider"></div>
+
+      <!-- Upload Section -->
+      <div class="upload-section">
+        <div class="upload-hd">
+          <div class="upload-title">上传文件</div>
+          <div class="upload-hint">提示：大文件建议先测试小段</div>
+        </div>
+        <label class="drop-zone" for="fileInput">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span class="drop-text">点击或拖拽文件到此处</span>
+          <span class="drop-formats">PDF · TXT · DOCX</span>
+        </label>
+        <input type="file" id="fileInput" accept=".txt,.docx,.pdf" class="sr-only">
+      </div>
 
       <div class="spacer"></div>
+
+    </div><!-- /wrap -->
 
     <!-- 书架底部抽屉 -->
     <div id="sheetOverlay" class="sheet-overlay"></div>
@@ -132,17 +194,224 @@
 
     <!-- 底部播放器 -->
     <footer class="playerbar">
+      <audio id="audioPlayer" style="display:none"></audio>
       <div class="wrap player-inner">
+
         <div class="player-meta">
           <span id="playerBookTitle" class="player-book-title"></span>
           <span id="playerChunkInfo" class="player-chunk-info"></span>
         </div>
-        <audio id="audioPlayer" controls></audio>
+
+        <!-- Timeline -->
+        <div class="timeline-row">
+          <span class="time-label" id="timeStart">0:00</span>
+          <div class="time-bar-bg" id="timeBar">
+            <div class="time-bar-fill" id="timeBarFill"></div>
+          </div>
+          <span class="time-label" id="timeEnd">0:00</span>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-row">
+          <button class="ctrl-btn" id="skipBackBtn" title="上一段">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>
+            </svg>
+          </button>
+          <button class="ctrl-btn" id="rewindBtn" title="-10s">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.01"/>
+            </svg>
+          </button>
+          <button class="ctrl-btn main-play-btn" id="mainPlayBtn">
+            <svg id="mainPlayIcon" width="18" height="18" viewBox="0 0 24 24">
+              <polygon points="5,3 19,12 5,21" fill="white"/>
+            </svg>
+          </button>
+          <button class="ctrl-btn" id="forwardBtn" title="+10s">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.01"/>
+            </svg>
+          </button>
+          <button class="ctrl-btn" id="skipFwdBtn" title="下一段">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Bottom Row -->
+        <div class="player-bottom-row">
+          <div class="vol-group">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+            <div class="vol-bar-bg">
+              <div class="vol-bar-fill" id="volBarFill" style="width:66%"></div>
+            </div>
+          </div>
+          <span id="playerSpeedLabel" class="speed-label">1.0×</span>
+          <div class="right-icons">
+            <button class="player-shelf-btn" id="playerShelfBtn" title="书架">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
       </div>
     </footer>
   </div>
 
- <script type="module" src="./app.js?v=20260323-1"></script>
+  <script type="module" src="./app.js?v=20260414-1"></script>
+  <script>
+  // ── 自定义播放器控件 ──────────────────────────────────────────
+  (function () {
+    const audio          = document.getElementById('audioPlayer');
+    const timeBarBg      = document.getElementById('timeBar');
+    const timeBarFill    = document.getElementById('timeBarFill');
+    const timeStart      = document.getElementById('timeStart');
+    const timeEnd        = document.getElementById('timeEnd');
+    const mainPlayBtn    = document.getElementById('mainPlayBtn');
+    const mainPlayIcon   = document.getElementById('mainPlayIcon');
+    const playPauseBtn   = document.getElementById('playPauseBtn');
+    const skipBackBtn    = document.getElementById('skipBackBtn');
+    const skipFwdBtn     = document.getElementById('skipFwdBtn');
+    const rewindBtn      = document.getElementById('rewindBtn');
+    const forwardBtn     = document.getElementById('forwardBtn');
+    const volBarFill     = document.getElementById('volBarFill');
+    const volBarBg       = document.querySelector('.vol-bar-bg');
+    const playerSpeedLbl = document.getElementById('playerSpeedLabel');
+    const speedSelect    = document.getElementById('speedSelect');
+    const timerBtn       = document.getElementById('timerBtn');
+    const timerDropdown  = document.getElementById('timerDropdown');
+    const sleepTimer     = document.getElementById('sleepTimer');
 
+    function fmt(s) {
+      if (!isFinite(s) || s < 0) return '0:00';
+      return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+    }
+
+    const PLAY_SVG  = '<polygon points="5,3 19,12 5,21" fill="white"/>';
+    const PAUSE_SVG = '<rect x="5" y="3" width="4" height="18" fill="white"/><rect x="15" y="3" width="4" height="18" fill="white"/>';
+
+    // Timeline
+    if (audio && timeBarBg) {
+      audio.addEventListener('timeupdate', () => {
+        const pct = audio.duration ? audio.currentTime / audio.duration : 0;
+        if (timeBarFill) timeBarFill.style.width = (pct * 100) + '%';
+        if (timeStart) timeStart.textContent = fmt(audio.currentTime);
+        if (timeEnd) timeEnd.textContent = fmt(audio.duration);
+      });
+      audio.addEventListener('loadedmetadata', () => {
+        if (timeEnd) timeEnd.textContent = fmt(audio.duration);
+      });
+
+      timeBarBg.addEventListener('click', (e) => {
+        const r = timeBarBg.getBoundingClientRect();
+        if (audio.duration) audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration;
+      });
+    }
+
+    // Play state icon
+    if (audio && mainPlayIcon) {
+      audio.addEventListener('play',  () => { mainPlayIcon.innerHTML = PAUSE_SVG; });
+      audio.addEventListener('pause', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
+      audio.addEventListener('ended', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
+    }
+
+    // Main play button → delegate to playPauseBtn
+    if (mainPlayBtn && playPauseBtn) {
+      mainPlayBtn.addEventListener('click', () => playPauseBtn.click());
+    }
+
+    // 拦截 app.js 的 emoji innerText，替换为简洁 SVG 图标
+    if (playPauseBtn) {
+      const PPPLAY_HTML  = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;vertical-align:middle"><polygon points="5,3 19,12 5,21"/></svg> 播放';
+      const PPPAUSE_HTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;vertical-align:middle"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 暂停';
+      new MutationObserver(() => {
+        const t = playPauseBtn.textContent.trim();
+        if (t.includes('暂停') && !playPauseBtn.querySelector('svg')) {
+          playPauseBtn.innerHTML = PPPAUSE_HTML;
+        } else if (t.includes('播放') && !playPauseBtn.querySelector('svg')) {
+          playPauseBtn.innerHTML = PPPLAY_HTML;
+        }
+      }).observe(playPauseBtn, { childList: true, subtree: true, characterData: true });
+    }
+
+    // Skip prev/next via chunkNav select
+    function getChunkSel() { return document.querySelector('#chunkNav select'); }
+    if (skipBackBtn) {
+      skipBackBtn.addEventListener('click', () => {
+        const sel = getChunkSel();
+        if (sel && parseInt(sel.value) > 0) {
+          sel.value = parseInt(sel.value) - 1;
+          sel.dispatchEvent(new Event('change'));
+        }
+      });
+    }
+    if (skipFwdBtn) {
+      skipFwdBtn.addEventListener('click', () => {
+        const sel = getChunkSel();
+        if (sel && parseInt(sel.value) < sel.options.length - 1) {
+          sel.value = parseInt(sel.value) + 1;
+          sel.dispatchEvent(new Event('change'));
+        }
+      });
+    }
+
+    // Rewind / Forward ±10s
+    if (rewindBtn && audio)  rewindBtn.addEventListener('click',  () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
+    if (forwardBtn && audio) forwardBtn.addEventListener('click', () => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10); });
+
+    // Speed label sync
+    if (speedSelect && playerSpeedLbl) {
+      const sync = () => { playerSpeedLbl.textContent = parseFloat(speedSelect.value).toFixed(1) + '×'; };
+      speedSelect.addEventListener('change', sync);
+      sync();
+    }
+
+    // Timer dropdown
+    if (timerBtn && timerDropdown) {
+      timerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        timerDropdown.classList.toggle('hidden');
+      });
+      document.addEventListener('click', () => timerDropdown.classList.add('hidden'));
+      timerDropdown.querySelectorAll('.timer-option').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = btn.dataset.val;
+          if (sleepTimer) { sleepTimer.value = val; sleepTimer.dispatchEvent(new Event('change')); }
+          timerDropdown.classList.add('hidden');
+          const icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg> ';
+          timerBtn.innerHTML = icon + (val === '0' ? '定时关闭' : btn.textContent.trim());
+        });
+      });
+    }
+
+    // 播放器里的目录按钮 → 打开书架
+    const playerShelfBtn = document.getElementById('playerShelfBtn');
+    if (playerShelfBtn) {
+      playerShelfBtn.addEventListener('click', () => {
+        document.getElementById('shelfBtn')?.click();
+      });
+    }
+
+    // Volume bar
+    if (volBarBg && audio && volBarFill) {
+      volBarBg.style.cursor = 'pointer';
+      volBarBg.addEventListener('click', (e) => {
+        const r = volBarBg.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        audio.volume = pct;
+        volBarFill.style.width = (pct * 100) + '%';
+      });
+    }
+  })();
+  </script>
 </body>
 </html>
