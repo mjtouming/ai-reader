@@ -20,6 +20,22 @@ const VOICE_MANUAL_KEY = "ai_reader_voice_manual";
 
 voiceSelect.addEventListener("change", () => {
   localStorage.setItem(VOICE_MANUAL_KEY, voiceSelect.value);
+
+  // 如果已有内容且音频已启动，自动从当前段重新生成
+  if (chunks.length > 0 && audioPlayer && (audioPlayer.src || isAutoPlaying)) {
+    const resumeIndex = currentIndex;
+    interruptPlayback("");
+    setStatus(`切换声线，重新生成第 ${resumeIndex + 1} 段…`, "info", { busy: true, loading: true });
+    isAutoPlaying = true;
+    currentJobId += 1;
+    const jobId = currentJobId;
+    playChunk(resumeIndex, jobId).catch(e => {
+      if (e?.name !== "AbortError") {
+        setStatus("切换声线失败 ❌", "bad");
+        isAutoPlaying = false;
+      }
+    });
+  }
 });
 
 modeSelect.addEventListener("change", () => {
