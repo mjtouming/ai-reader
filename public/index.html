@@ -298,10 +298,16 @@
         if (timeEnd) timeEnd.textContent = fmt(audio.duration);
       });
 
-      timeBarBg.addEventListener('click', (e) => {
+      function seekTo(clientX) {
         const r = timeBarBg.getBoundingClientRect();
-        if (audio.duration) audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration;
-      });
+        if (audio.duration) {
+          const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+          audio.currentTime = pct * audio.duration;
+        }
+      }
+      timeBarBg.addEventListener('click', (e) => seekTo(e.clientX));
+      timeBarBg.addEventListener('touchstart', (e) => { e.preventDefault(); seekTo(e.touches[0].clientX); }, { passive: false });
+      timeBarBg.addEventListener('touchmove',  (e) => { e.preventDefault(); seekTo(e.touches[0].clientX); }, { passive: false });
     }
 
     // Play state icon

@@ -668,6 +668,10 @@ progress::-moz-progress-bar      { background: #000; }
   border-radius: 999px;
   cursor: pointer;
   position: relative;
+  /* 扩大触摸区域：上下各 10px，视觉不变 */
+  padding: 10px 0;
+  margin: -10px 0;
+  background-clip: content-box;
 }
 
 .time-bar-fill {
