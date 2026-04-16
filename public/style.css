@@ -842,6 +842,64 @@ progress::-moz-progress-bar      { background: #000; }
   .sheet-drawer   { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 0; }
 }
 
+/* ===== 深色模式 ===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:    #1C1A17;
+    --text:  #F0EDE8;
+    --muted: #999;
+    --subtle:#666;
+    --line:  #2E2C29;
+    --line2: #3A3835;
+  }
+
+  body { background: #111009; }
+
+  /* 外框阴影 */
+  @media (min-width: 900px) {
+    .app { border-color: rgba(255,255,255,.08); box-shadow: 0 32px 80px rgba(0,0,0,.6); }
+  }
+
+  /* 文本框 / 选择框 */
+  textarea, select, input {
+    background: var(--bg);
+    color: var(--text);
+    color-scheme: dark;
+  }
+
+  /* 进度条填充、主按钮 → 用亮色 */
+  .time-bar-fill          { background: var(--text); }
+  .btn-generate           { background: var(--text); color: var(--bg); }
+  .main-play-btn          { background: var(--text); }
+  .main-play-btn svg polygon,
+  .main-play-btn svg rect { fill: var(--bg); }
+
+  /* outline 按钮边框、文字 */
+  .btn-outline { color: var(--text); }
+
+  /* 上传区 */
+  .drop-zone:hover { background: rgba(255,255,255,.03); border-color: #555; }
+  .drop-zone:focus-within,
+  .drop-zone.dragover { border-color: var(--text); }
+
+  /* 书架新增按钮 */
+  .sheet-add-btn { border-color: var(--line2); color: var(--text); }
+
+  /* 段落选择 focus */
+  .chunk-select:focus { border-color: var(--text); }
+
+  /* 状态色保持可读 */
+  .status.ok  { color: #4ade80; }
+  .status.bad { color: #f87171; }
+
+  /* 进度条轨道（loading） */
+  progress::-webkit-progress-value { background: var(--text); }
+  progress::-moz-progress-bar      { background: var(--text); }
+
+  /* PC 外框 */
+  .app { border-color: rgba(255,255,255,.08); }
+}
+
 /* ===== Mobile safe area ===== */
 @media (max-width: 899px) {
   .app { padding-bottom: 0; }
