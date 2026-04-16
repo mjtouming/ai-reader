@@ -663,23 +663,32 @@ progress::-moz-progress-bar      { background: #000; }
 
 .time-bar-bg {
   flex: 1;
+  height: 20px;        /* 大触摸区，视觉轨道由 ::before 画 */
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+.time-bar-bg::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%; transform: translateY(-50%);
   height: 2px;
   background: var(--line);
   border-radius: 999px;
-  cursor: pointer;
-  position: relative;
-  /* 扩大触摸区域：上下各 10px，视觉不变 */
-  padding: 10px 0;
-  margin: -10px 0;
-  background-clip: content-box;
+  pointer-events: none;
 }
 
 .time-bar-fill {
-  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 50%; transform: translateY(-50%);
+  height: 2px;
   background: #000;
   border-radius: 999px;
   width: 0%;
   transition: width .1s linear;
+  pointer-events: none;
 }
 
 /* Controls */
