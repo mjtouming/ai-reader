@@ -186,7 +186,12 @@
     <div id="sheetOverlay" class="sheet-overlay"></div>
     <div id="sheetDrawer" class="sheet-drawer">
       <div class="sheet-handle"></div>
-      <div class="sheet-header">书架</div>
+      <div class="sheet-header">
+        <span>书架</span>
+        <button class="sheet-close-btn" id="sheetCloseBtn" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
       <div id="bookList" class="book-list"></div>
       <div class="sheet-footer">
         <button id="addBookBtn" class="sheet-add-btn">＋ 添加新书</button>
@@ -392,6 +397,14 @@
     if (playerShelfBtn) {
       playerShelfBtn.addEventListener('click', () => {
         document.getElementById('shelfBtn')?.click();
+      });
+    }
+
+    // 书架关闭按钮 → 点击 overlay 触发关闭（app.js 监听 overlay click 来关闭）
+    const sheetCloseBtn = document.getElementById('sheetCloseBtn');
+    if (sheetCloseBtn) {
+      sheetCloseBtn.addEventListener('click', () => {
+        document.getElementById('sheetOverlay')?.click();
       });
     }
 
