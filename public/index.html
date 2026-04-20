@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20260420-1" />
+  <link rel="stylesheet" href="style.css?v=20260420-2" />
 </head>
 
 <body>
@@ -259,7 +259,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20260420-1"></script>
+  <script type="module" src="./app.js?v=20260420-2"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {
@@ -448,14 +448,10 @@
         });
       }
 
-      // play / pause — 走 app.js 的播放逻辑，不让 iOS 直接操作 audio 元素
-      try { navigator.mediaSession.setActionHandler('play', () => {
-        const ppBtn = document.getElementById('playPauseBtn');
-        if (audio && audio.paused && ppBtn) ppBtn.click();
-      }); } catch(e) {}
+      // play 不注册 handler — 让 iOS 默认行为处理，保留锁屏解锁后自动恢复声音
+      // pause handler — 明确告知 iOS 已暂停，防止解锁时自动恢复播放（Bug 2 根本原因）
       try { navigator.mediaSession.setActionHandler('pause', () => {
-        const ppBtn = document.getElementById('playPauseBtn');
-        if (audio && !audio.paused && ppBtn) ppBtn.click();
+        if (audio) audio.pause();
         navigator.mediaSession.playbackState = 'paused';
       }); } catch(e) {}
 
