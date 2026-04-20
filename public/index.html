@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20260420-2" />
+  <link rel="stylesheet" href="style.css?v=20260420-3" />
 </head>
 
 <body>
@@ -259,7 +259,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20260420-2"></script>
+  <script type="module" src="./app.js?v=20260420-3"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {
@@ -419,42 +419,13 @@
       });
     }
 
-    // Media Session API — 锁屏控制
+    // Media Session API — 锁屏显示 ±10s 快进快退
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: '灵听',
         artist: 'AI听书',
         artwork: [{ src: 'apple-touch-icon.png', sizes: '192x192', type: 'image/png' }]
       });
-
-      // 将 audio 实际播放状态同步给锁屏（防止 iOS 用墙上时钟估算假进度）
-      if (audio) {
-        audio.addEventListener('play', () => {
-          navigator.mediaSession.playbackState = 'playing';
-        });
-        audio.addEventListener('pause', () => {
-          navigator.mediaSession.playbackState = 'paused';
-        });
-        audio.addEventListener('timeupdate', () => {
-          if (audio.duration && isFinite(audio.duration)) {
-            try {
-              navigator.mediaSession.setPositionState({
-                duration: audio.duration,
-                playbackRate: audio.playbackRate || 1,
-                position: Math.min(audio.currentTime, audio.duration)
-              });
-            } catch(e) {}
-          }
-        });
-      }
-
-      // play 不注册 handler — 让 iOS 默认行为处理，保留锁屏解锁后自动恢复声音
-      // pause handler — 明确告知 iOS 已暂停，防止解锁时自动恢复播放（Bug 2 根本原因）
-      try { navigator.mediaSession.setActionHandler('pause', () => {
-        if (audio) audio.pause();
-        navigator.mediaSession.playbackState = 'paused';
-      }); } catch(e) {}
-
       try { navigator.mediaSession.setActionHandler('seekbackward', (d) => {
         if (audio) audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10));
       }); } catch(e) {}
@@ -462,6 +433,22 @@
         if (audio) audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10));
       }); } catch(e) {}
     }
+
+    // 解锁 / 切回页面时，用 audio.paused 真实值强制同步按钮状态（修复 Bug 2）
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && audio) {
+        setTimeout(() => {
+          const ppBtn = document.getElementById('playPauseBtn');
+          if (audio.paused) {
+            if (mainPlayIcon) mainPlayIcon.innerHTML = PLAY_SVG;
+            if (ppBtn) ppBtn.innerText = '▶️ 播放';
+          } else {
+            if (mainPlayIcon) mainPlayIcon.innerHTML = PAUSE_SVG;
+            if (ppBtn) ppBtn.innerText = '⏸ 暂停';
+          }
+        }, 200);
+      }
+    });
   })();
   </script>
 </body>
