@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20260420-4" />
+  <link rel="stylesheet" href="style.css?v=20260420-5" />
 </head>
 
 <body>
@@ -259,7 +259,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20260420-4"></script>
+  <script type="module" src="./app.js?v=20260420-5"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {
@@ -315,12 +315,25 @@
       timeBarBg.addEventListener('touchmove',  (e) => { e.preventDefault(); seekTo(e.touches[0].clientX); }, { passive: false });
     }
 
+    // 解锁保护标志：visibilitychange 判断"应保持暂停"后，1s 内拦截 iOS 的自动续播
+    let _mustRemainPaused = false;
+
     // Play state icon
     if (audio && mainPlayIcon) {
-      audio.addEventListener('play',  () => { console.log('[灵听debug] audio play event, paused=', audio.paused); mainPlayIcon.innerHTML = PAUSE_SVG; });
-      audio.addEventListener('pause', () => { console.log('[灵听debug] audio pause event, paused=', audio.paused); mainPlayIcon.innerHTML = PLAY_SVG; });
+      audio.addEventListener('play', () => {
+        if (_mustRemainPaused) {
+          audio.pause(); // 立刻 re-pause，不更新图标
+          return;
+        }
+        mainPlayIcon.innerHTML = PAUSE_SVG;
+      });
+      audio.addEventListener('pause', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
       audio.addEventListener('ended', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
     }
+
+    // 用户主动点播放时，清除保护标志
+    if (mainPlayBtn)  mainPlayBtn.addEventListener('click',  () => { _mustRemainPaused = false; });
+    if (playPauseBtn) playPauseBtn.addEventListener('click', () => { _mustRemainPaused = false; });
 
     // Main play button → delegate to playPauseBtn
     if (mainPlayBtn && playPauseBtn) {
@@ -436,15 +449,17 @@
 
     // 解锁 / 切回页面时，用 audio.paused 真实值强制同步按钮状态（修复 Bug 2）
     document.addEventListener('visibilitychange', () => {
-      console.log('[灵听debug] visibilitychange:', document.visibilityState, '| audio.paused=', audio ? audio.paused : 'no audio');
       if (document.visibilityState === 'visible' && audio) {
         setTimeout(() => {
-          console.log('[灵听debug] visibilitychange 200ms后: audio.paused=', audio.paused);
           const ppBtn = document.getElementById('playPauseBtn');
           if (audio.paused) {
+            // 音频处于暂停 → 设保护标志 1s，拦截 iOS 延迟触发的自动续播
+            _mustRemainPaused = true;
+            setTimeout(() => { _mustRemainPaused = false; }, 1000);
             if (mainPlayIcon) mainPlayIcon.innerHTML = PLAY_SVG;
             if (ppBtn) ppBtn.innerText = '▶️ 播放';
           } else {
+            _mustRemainPaused = false;
             if (mainPlayIcon) mainPlayIcon.innerHTML = PAUSE_SVG;
             if (ppBtn) ppBtn.innerText = '⏸ 暂停';
           }
