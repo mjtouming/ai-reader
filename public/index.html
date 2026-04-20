@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20260420-3" />
+  <link rel="stylesheet" href="style.css?v=20260420-4" />
 </head>
 
 <body>
@@ -259,7 +259,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20260420-3"></script>
+  <script type="module" src="./app.js?v=20260420-4"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {
@@ -317,8 +317,8 @@
 
     // Play state icon
     if (audio && mainPlayIcon) {
-      audio.addEventListener('play',  () => { mainPlayIcon.innerHTML = PAUSE_SVG; });
-      audio.addEventListener('pause', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
+      audio.addEventListener('play',  () => { console.log('[灵听debug] audio play event, paused=', audio.paused); mainPlayIcon.innerHTML = PAUSE_SVG; });
+      audio.addEventListener('pause', () => { console.log('[灵听debug] audio pause event, paused=', audio.paused); mainPlayIcon.innerHTML = PLAY_SVG; });
       audio.addEventListener('ended', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
     }
 
@@ -436,8 +436,10 @@
 
     // 解锁 / 切回页面时，用 audio.paused 真实值强制同步按钮状态（修复 Bug 2）
     document.addEventListener('visibilitychange', () => {
+      console.log('[灵听debug] visibilitychange:', document.visibilityState, '| audio.paused=', audio ? audio.paused : 'no audio');
       if (document.visibilityState === 'visible' && audio) {
         setTimeout(() => {
+          console.log('[灵听debug] visibilitychange 200ms后: audio.paused=', audio.paused);
           const ppBtn = document.getElementById('playPauseBtn');
           if (audio.paused) {
             if (mainPlayIcon) mainPlayIcon.innerHTML = PLAY_SVG;

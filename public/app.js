@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260420-3';
+import { generateAudioFromText } from './audioEngine.js?v=20260420-4';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
