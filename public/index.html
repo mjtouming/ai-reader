@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20260416-2" />
+  <link rel="stylesheet" href="style.css?v=20260420-1" />
 </head>
 
 <body>
@@ -259,7 +259,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20260416-2"></script>
+  <script type="module" src="./app.js?v=20260420-1"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {
@@ -419,13 +419,46 @@
       });
     }
 
-    // Media Session API — 锁屏显示 ±10s 快进快退
+    // Media Session API — 锁屏控制
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: '灵听',
         artist: 'AI听书',
         artwork: [{ src: 'apple-touch-icon.png', sizes: '192x192', type: 'image/png' }]
       });
+
+      // 将 audio 实际播放状态同步给锁屏（防止 iOS 用墙上时钟估算假进度）
+      if (audio) {
+        audio.addEventListener('play', () => {
+          navigator.mediaSession.playbackState = 'playing';
+        });
+        audio.addEventListener('pause', () => {
+          navigator.mediaSession.playbackState = 'paused';
+        });
+        audio.addEventListener('timeupdate', () => {
+          if (audio.duration && isFinite(audio.duration)) {
+            try {
+              navigator.mediaSession.setPositionState({
+                duration: audio.duration,
+                playbackRate: audio.playbackRate || 1,
+                position: Math.min(audio.currentTime, audio.duration)
+              });
+            } catch(e) {}
+          }
+        });
+      }
+
+      // play / pause — 走 app.js 的播放逻辑，不让 iOS 直接操作 audio 元素
+      try { navigator.mediaSession.setActionHandler('play', () => {
+        const ppBtn = document.getElementById('playPauseBtn');
+        if (audio && audio.paused && ppBtn) ppBtn.click();
+      }); } catch(e) {}
+      try { navigator.mediaSession.setActionHandler('pause', () => {
+        const ppBtn = document.getElementById('playPauseBtn');
+        if (audio && !audio.paused && ppBtn) ppBtn.click();
+        navigator.mediaSession.playbackState = 'paused';
+      }); } catch(e) {}
+
       try { navigator.mediaSession.setActionHandler('seekbackward', (d) => {
         if (audio) audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10));
       }); } catch(e) {}
