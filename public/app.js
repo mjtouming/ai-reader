@@ -696,38 +696,48 @@ async function playChunk(index, jobId) {
   const abort = new AbortController();
   currentAbort = abort;
 
-  let result;
+  let audioUrl;
 
-  try {
+  if (audioCache[index]) {
+    // 直接使用预生成缓存，不重新生成
+    audioUrl = audioCache[index];
+    delete audioCache[index];
+  } else {
+    // 已有改写文本 → skipRewrite=true 直接 TTS；没有 → 发原文让服务端改写
+    const alreadyRewritten = !!rewrittenChunks[index];
     const textToSend = rewrittenChunks[index] || chunks[index];
+    const skipRewrite = alreadyRewritten ||
+      (index === 0 && (modeSelect?.value || 'original') === 'original');
 
-    result = await generateAudioFromText(
-      textToSend,
-      mode,
-      voice,
-      abort.signal,
-      rewrittenChunks[index - 1] || null,
-      index + 1,
-      chunks.length,
-      index === 0 && (modeSelect?.value || 'original') === 'original'  // 仅原文模式第一段跳过改写
-    );
-  } catch (e) {
-    if (e?.name === "AbortError") {
-      console.log("生成被取消");
-      return;
+    let result;
+    try {
+      result = await generateAudioFromText(
+        textToSend,
+        mode,
+        voice,
+        abort.signal,
+        rewrittenChunks[index - 1] || null,
+        index + 1,
+        chunks.length,
+        skipRewrite
+      );
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        console.log("生成被取消");
+        return;
+      }
+      throw e;
     }
-    throw e;
-  }
 
-  const audioUrl      = result.url;
-  const rewrittenText = result.rewritten;
+    audioUrl = result.url;
+    const rewrittenText = result.rewritten;
+    if (!rewrittenChunks[index] && rewrittenText) {
+      rewrittenChunks[index] = rewrittenText;
+    }
+  }
 
   if (jobId !== currentJobId) return;
-
   if (!audioUrl) throw new Error("audioUrl is null (TTS failed)");
-  if (!rewrittenChunks[index] && rewrittenText) {
-    rewrittenChunks[index] = rewrittenText;
-  }
 
   if (currentAudioUrl) {
     try { URL.revokeObjectURL(currentAudioUrl); } catch {}
