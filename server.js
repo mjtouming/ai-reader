@@ -133,6 +133,14 @@ async function runCosyVoiceTTS({ inputText, voiceKey, outFile }) {
     const chunks = [];
     let firstAudio = null;
     const startTime = Date.now();
+    let settled = false;
+
+    const done = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve();
+    };
 
     ws.on("open", () => {
       const task = {
@@ -158,8 +166,8 @@ async function runCosyVoiceTTS({ inputText, voiceKey, outFile }) {
           const msg = JSON.parse(data.toString());
           const event = msg?.header?.event;
           if (event === "task-failed") {
-            reject(new Error(`CosyVoice task-failed: ${JSON.stringify(msg)}`));
             ws.close();
+            done(new Error(`CosyVoice task-failed: ${JSON.stringify(msg)}`));
             return;
           }
           if (event === "task-finished") {
@@ -168,26 +176,26 @@ async function runCosyVoiceTTS({ inputText, voiceKey, outFile }) {
             const totalMs = Date.now() - startTime;
             console.log(`🎙️ CosyVoice done in ${totalMs}ms, ttfb=${firstAudio}ms, voice=${voice}, size=${audio.length}`);
             ws.close();
-            resolve();
+            done();
           }
-        } catch {}
+        } catch (e) {
+          console.error("CosyVoice message parse error:", e);
+        }
       }
     });
 
-    ws.on("error", (err) => reject(new Error("WebSocket error: " + err.message)));
+    ws.on("error", (err) => done(new Error("WebSocket error: " + err.message)));
 
-    ws.on("close", (code, reason) => {
-      if (chunks.length > 0 && !fs.existsSync(outFile)) {
-        const audio = Buffer.concat(chunks);
-        fs.writeFileSync(outFile, audio);
-        resolve();
+    ws.on("close", () => {
+      if (!settled) {
+        done(new Error("CosyVoice WebSocket closed unexpectedly"));
       }
     });
 
     setTimeout(() => {
       ws.close();
-      reject(new Error("CosyVoice timeout (20s)"));
-    }, 20000);
+      done(new Error("CosyVoice timeout (120s)"));
+    }, 120000);
   });
 }
 

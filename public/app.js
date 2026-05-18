@@ -786,13 +786,14 @@ async function playChunk(index, jobId) {
   fillWindow(index, jobId);
 }
 
-// 填满预生成窗口
+// 填满预生成窗口（串行：每次只启动一个，由 preGenerateNext 完成后继续触发）
 function fillWindow(fromIndex, jobId) {
   for (let i = fromIndex + 1; i <= fromIndex + PRE_WINDOW; i++) {
     if (i >= chunks.length) break;
     if (audioCache[i]) continue;
     if (preGeneratingSet.has(i)) continue;
     preGenerateNext(i, jobId);
+    break; // 等这个完成后由它自己触发下一个，保证 previous 上下文正确
   }
 }
 
