@@ -306,6 +306,7 @@ function clearForNewBook() {
   renderChunkNav();
   setStatus("请粘贴文字或上传文件", "info");
   closeSheet();
+  fileInput?.click();
 }
 
 // ── 段落导航 ──────────────────────────────────────────────────
