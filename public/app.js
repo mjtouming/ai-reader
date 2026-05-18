@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260420-7';
+import { generateAudioFromText } from './audioEngine.js?v=20260416-2';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -445,7 +445,7 @@ function splitTextIntoChunks(text, opts = {}) {
       pushBuf();
 
       const sentences = p
-        .split(/(?<=[。！？!?；;。\.])\s+/)
+        .split(/(?<=[。！？!?；;。\.])\s*/)
         .map(s => s.trim())
         .filter(Boolean);
 
