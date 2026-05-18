@@ -12,6 +12,7 @@ const path = require("path");
 const { spawn, execFile } = require("child_process");
 const crypto = require("crypto");
 const os = require("os");
+const WebSocket = require("ws");
 
 // ===== rewrite cache =====
 const rewriteCachePath = path.join(__dirname, "rewrite_cache.json");
@@ -108,6 +109,85 @@ function runEdgeTTS({ inputText, voiceKey, outFile }) {
       if (code === 0) return resolve();
       reject(new Error(`edge-tts failed (code ${code})`));
     });
+  });
+}
+
+async function runCosyVoiceTTS({ inputText, voiceKey, outFile }) {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  if (!apiKey) throw new Error("DASHSCOPE_API_KEY not set in .env");
+
+  const voiceMap = {
+    young_female: "longyue_v3",
+    girl:         "longhuhu_v3",
+    young_male:   "longxiu_v3",
+    elder_male:   "longsanshu_v3",
+  };
+
+  const voice = voiceMap[voiceKey] || voiceMap["young_female"];
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket("wss://dashscope.aliyuncs.com/api-ws/v1/inference", {
+      headers: { Authorization: `bearer ${apiKey}` },
+    });
+
+    const chunks = [];
+    let firstAudio = null;
+    const startTime = Date.now();
+
+    ws.on("open", () => {
+      const task = {
+        header: { task_id: `tts_${Date.now()}`, action: "run-task" },
+        payload: {
+          task_group: "audio",
+          task: "tts",
+          function: "SpeechSynthesizer",
+          model: "cosyvoice-v3-flash",
+          parameters: { voice, format: "mp3" },
+          input: { text: inputText },
+        },
+      };
+      ws.send(JSON.stringify(task));
+    });
+
+    ws.on("message", (data, isBinary) => {
+      if (isBinary) {
+        if (!firstAudio) firstAudio = Date.now() - startTime;
+        chunks.push(data);
+      } else {
+        try {
+          const msg = JSON.parse(data.toString());
+          const event = msg?.header?.event;
+          if (event === "task-failed") {
+            reject(new Error(`CosyVoice task-failed: ${JSON.stringify(msg)}`));
+            ws.close();
+            return;
+          }
+          if (event === "task-finished") {
+            const audio = Buffer.concat(chunks);
+            fs.writeFileSync(outFile, audio);
+            const totalMs = Date.now() - startTime;
+            console.log(`🎙️ CosyVoice done in ${totalMs}ms, ttfb=${firstAudio}ms, voice=${voice}, size=${audio.length}`);
+            ws.close();
+            resolve();
+          }
+        } catch {}
+      }
+    });
+
+    ws.on("error", (err) => reject(new Error("WebSocket error: " + err.message)));
+
+    ws.on("close", (code, reason) => {
+      if (chunks.length > 0 && !fs.existsSync(outFile)) {
+        const audio = Buffer.concat(chunks);
+        fs.writeFileSync(outFile, audio);
+        resolve();
+      }
+    });
+
+    setTimeout(() => {
+      ws.close();
+      reject(new Error("CosyVoice timeout (20s)"));
+    }, 20000);
   });
 }
 
@@ -526,6 +606,12 @@ ${inputText}
       const ttsProvider = process.env.TTS_PROVIDER || "edge";
       if (ttsProvider === "fish") {
         await runFishAudioTTS({ inputText, outFile });
+      } else if (ttsProvider === "cosyvoice") {
+        await runCosyVoiceTTS({
+          inputText,
+          voiceKey: voice || "young_female",
+          outFile,
+        });
       } else {
         await runEdgeTTS({
           inputText,
