@@ -522,12 +522,15 @@ app.post("/tts", async (req, res) => {
         const prevText = previous ? String(previous).slice(-400) : "";
 
         // ── story 模式用专属 userContent，其他模式用通用版 ──
+        const isFirstChunk = !prevText;
         const userContent = mode === "story"
           ? `
 段落序号：${chunkLabel}
 
-上一段已讲述内容（用于衔接，可能为空）：
-${prevText}
+${isFirstChunk
+  ? `这是第一段，没有上文。直接开讲，禁止使用任何过渡语、引入语或"接着上回说"之类的开场白。`
+  : `上一段已讲述内容（仅用于衔接语气，禁止回顾或重复其内容）：\n${prevText}`
+}
 
 原文内容：
 ${inputText}
