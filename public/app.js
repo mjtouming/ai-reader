@@ -198,12 +198,12 @@ function loadBook(book) {
   speedSelect.value = book.speed || "1";
 
   // Re-split with same algorithm as generateBtn
-  const firstParts = splitTextIntoChunks(book.text, { maxLen: 200, minLen: 100 });
-  if (firstParts.length > 1) {
-    const first     = firstParts.shift();
-    const restText  = firstParts.join("\n\n");
+  const warmupParts0 = splitTextIntoChunks(book.text, { maxLen: 300, minLen: 150 });
+  if (warmupParts0.length > 3) {
+    const warmup   = warmupParts0.splice(0, 3);
+    const restText = warmupParts0.join("\n\n");
     const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
-    chunks = [first, ...restParts];
+    chunks = [...warmup, ...restParts];
   } else {
     chunks = firstParts;
   }
@@ -962,16 +962,16 @@ generateBtn?.addEventListener("click", async function () {
   currentJobId += 1;
   const jobId = currentJobId;
 
-  // 加速启动：第一段切小
-  const firstParts = splitTextIntoChunks(text, { maxLen: 200, minLen: 100 });
+  // 加速启动：前3段切小（约300字），之后恢复2200字大段
+  const warmupParts = splitTextIntoChunks(text, { maxLen: 300, minLen: 150 });
 
-  if (firstParts.length > 1) {
-    const first    = firstParts.shift();
-    const restText = firstParts.join("\n\n");
+  if (warmupParts.length > 3) {
+    const warmup   = warmupParts.splice(0, 3);
+    const restText = warmupParts.join("\n\n");
     const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
-    chunks = [first, ...restParts];
+    chunks = [...warmup, ...restParts];
   } else {
-    chunks = firstParts;
+    chunks = warmupParts;
   }
 
   currentIndex    = 0;
