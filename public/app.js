@@ -198,7 +198,7 @@ function loadBook(book) {
   speedSelect.value = book.speed || "1";
 
   // Re-split with same algorithm as generateBtn
-  const firstParts = splitTextIntoChunks(book.text, { maxLen: 420, minLen: 200 });
+  const firstParts = splitTextIntoChunks(book.text, { maxLen: 200, minLen: 100 });
   if (firstParts.length > 1) {
     const first     = firstParts.shift();
     const restText  = firstParts.join("\n\n");
@@ -963,7 +963,7 @@ generateBtn?.addEventListener("click", async function () {
   const jobId = currentJobId;
 
   // 加速启动：第一段切小
-  const firstParts = splitTextIntoChunks(text, { maxLen: 420, minLen: 200 });
+  const firstParts = splitTextIntoChunks(text, { maxLen: 200, minLen: 100 });
 
   if (firstParts.length > 1) {
     const first    = firstParts.shift();
