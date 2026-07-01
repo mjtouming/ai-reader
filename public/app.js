@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260416-5';
+import { generateAudioFromText } from './audioEngine.js?v=20260416-6';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -957,24 +957,43 @@ generateBtn?.addEventListener("click", async function () {
   const isYouTube = /youtube\.com\/(watch|live)|youtu\.be\//.test(text);
   if (isYouTube) {
     setStatus("正在提取 YouTube 字幕...", "info", { busy: true });
-    try {
-      const response = await fetch("/fetch-youtube", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: text })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "失败");
-      textInput.value = data.text || "";
-      text = textInput.value;
-      modeSelect.value  = "original";
-      voiceSelect.value = "young_female";
-      setStatus("字幕已提取，准备生成...", "info");
-    } catch (error) {
-      console.error(error);
-      setStatus("YouTube 字幕提取失败 ❌：" + error.message, "bad", { busy: false });
+    let ytData = null;
+    let ytError = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await fetch("/fetch-youtube", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: text })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "失败");
+        ytData = data;
+        ytError = null;
+        break;
+      } catch (error) {
+        ytError = error;
+        // 只有网络层面的失败（请求根本没到服务器，比如手机信号瞬断）才重试一次；
+        // 服务端已经明确返回的错误（比如真的无字幕）不重试，重试也没用
+        const isNetworkError = error instanceof TypeError;
+        if (attempt < 2 && isNetworkError) {
+          setStatus("网络波动，正在重试...", "info", { busy: true });
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        break;
+      }
+    }
+    if (ytError) {
+      console.error(ytError);
+      setStatus("YouTube 字幕提取失败 ❌：" + ytError.message, "bad", { busy: false });
       return;
     }
+    textInput.value = ytData.text || "";
+    text = textInput.value;
+    modeSelect.value  = "original";
+    voiceSelect.value = "young_female";
+    setStatus("字幕已提取，准备生成...", "info");
   }
 
   // 分段前清理电子书开头目录/元信息
