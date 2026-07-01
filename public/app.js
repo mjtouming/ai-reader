@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260416-2';
+import { generateAudioFromText } from './audioEngine.js?v=20260416-3';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -193,7 +193,7 @@ function updateShelfProgress() {
 function loadBook(book) {
   interruptPlayback();
   textInput.value   = book.text;
-  modeSelect.value  = book.mode  || "original";
+  modeSelect.value  = (book.mode === "translate" ? "original" : book.mode) || "original";
   voiceSelect.value = book.voice || "young_female";
   speedSelect.value = book.speed || "1";
 
@@ -258,7 +258,7 @@ function renderShelf() {
 
     const progressEl = document.createElement("div");
     progressEl.className = "book-progress";
-    const modeLabel = book.mode === "story" ? "故事" : book.mode === "translate" ? "翻译" : "原文";
+    const modeLabel = book.mode === "story" ? "故事" : "原文";
     progressEl.textContent = `第 ${(book.currentIndex || 0) + 1}/${book.totalChunks || "?"} 段 · ${modeLabel}`;
 
     info.appendChild(titleEl);
@@ -535,13 +535,14 @@ function cleanBookTextForReading(rawText) {
   );
 
   let cleanedHead = [];
+  let removedMetaCount = 0;
   for (let i = 0; i < head.length; i++) {
     const line = head[i].trim();
     if (!line) {
       cleanedHead.push("");
       continue;
     }
-    if (metaLineRe.test(line)) continue;
+    if (metaLineRe.test(line)) { removedMetaCount++; continue; }
     cleanedHead.push(head[i]);
   }
 
@@ -626,6 +627,9 @@ function cleanBookTextForReading(rawText) {
 
   const result = joined.replace(/\n{3,}/g, "\n\n").trim();
 
+  const hasFrontMatterEvidence = cutStart !== -1 || removedMetaCount >= 2;
+  if (hasFrontMatterEvidence) {
+
   // 兜底清理：如果开头还有版权/目录残留，找第一个真正的正文段落
   const resultLines = result.split("\n");
   const skipRe = /ISBN|©|版权|出版|印刷|CIP|书号|定价|\d{4}年|\d+mm|CONTENTS|责任编辑|策划|封面|发行|邮编|电话|社址/i;
@@ -643,6 +647,8 @@ function cleanBookTextForReading(rawText) {
   // 只有当前面有大量非正文内容时才截断（超过5行才处理）
   if (firstContent >= 1) {
     return resultLines.slice(firstContent).join("\n").trim();
+  }
+
   }
 
   return result;
@@ -938,7 +944,7 @@ generateBtn?.addEventListener("click", async function () {
       if (!response.ok) throw new Error(data.error || "失败");
       textInput.value = data.text || "";
       text = textInput.value;
-      modeSelect.value  = "translate";
+      modeSelect.value  = "original";
       voiceSelect.value = "young_female";
       setStatus("字幕已提取，准备生成...", "info");
     } catch (error) {
@@ -1156,7 +1162,7 @@ window.addEventListener("load", function () {
     chunks            = session.chunks || [];
     currentIndex      = session.currentIndex || 0;
     maxReachedIndex   = session.maxReachedIndex ?? currentIndex;
-    modeSelect.value  = session.mode  || "original";
+    modeSelect.value  = (session.mode === "translate" ? "original" : session.mode) || "original";
     voiceSelect.value = session.voice || "young_female";
     speedSelect.value = session.speed || "1";
 

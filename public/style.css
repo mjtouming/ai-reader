@@ -82,8 +82,11 @@ body {
   font-size: 10px;
   font-weight: 400;
   color: var(--muted);
-  letter-spacing: 2px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .now-playing-title {
