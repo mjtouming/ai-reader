@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260416-3';
+import { generateAudioFromText } from './audioEngine.js?v=20260416-4';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -713,8 +713,7 @@ async function playChunk(index, jobId) {
     // 已有改写文本 → skipRewrite=true 直接 TTS；没有 → 发原文让服务端改写
     const alreadyRewritten = !!rewrittenChunks[index];
     const textToSend = rewrittenChunks[index] || chunks[index];
-    const skipRewrite = alreadyRewritten ||
-      (index === 0 && (modeSelect?.value || 'original') === 'original');
+    const skipRewrite = alreadyRewritten;
 
     let result;
     try {
