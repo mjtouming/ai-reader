@@ -789,7 +789,7 @@ app.post("/fetch-youtube", async (req, res) => {
 
   console.log("🎬 yt-dlp 开始提取字幕:", url);
 
-  execFile(ytDlpPath, args, { timeout: 60000 }, (err, stdout, stderr) => {
+  execFile(ytDlpPath, args, { timeout: 100000 }, (err, stdout, stderr) => {
     if (!fs.existsSync(tmpFile)) {
       console.error("yt-dlp stderr:", stderr);
       return res.status(500).json({ error: "视频无字幕" });
