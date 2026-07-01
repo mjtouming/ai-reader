@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260416-4';
+import { generateAudioFromText } from './audioEngine.js?v=20260416-5';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -654,6 +654,26 @@ function cleanBookTextForReading(rawText) {
   return result;
 }
 
+// 粗判文本是否需要"先翻译"（外语 或 文言文）——只看开头一小段，纯本地正则，不调用任何接口
+function textLikelyNeedsTranslation(text) {
+  if (!text) return false;
+  const sample = String(text).slice(0, 200);
+  const meaningfulChars = sample.replace(/[\s\d\p{P}]/gu, "");
+  if (!meaningfulChars) return false;
+
+  const cjkCount = (sample.match(/[一-龥]/g) || []).length;
+  const cjkRatio = cjkCount / meaningfulChars.length;
+
+  // 中文字符占比不够高 → 当外语处理，需要翻译
+  if (cjkRatio < 0.6) return true;
+
+  // 中文为主，但可能是文言文：典型文言虚词出现次数达到阈值
+  const classicalMarkers = sample.match(/[之乎者也矣焉哉兮曰]/g) || [];
+  if (classicalMarkers.length >= 2) return true;
+
+  return false;
+}
+
 // ── Playback core ─────────────────────────────────────────────
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
@@ -711,9 +731,13 @@ async function playChunk(index, jobId) {
     delete audioCache[index];
   } else {
     // 已有改写文本 → skipRewrite=true 直接 TTS；没有 → 发原文让服务端改写
+    // 原文模式第一段为了起播快，默认可以跳过改写，但如果开头是外语/文言文（需要先翻译），
+    // 就不能跳过，否则会读出没翻译的原文
     const alreadyRewritten = !!rewrittenChunks[index];
     const textToSend = rewrittenChunks[index] || chunks[index];
-    const skipRewrite = alreadyRewritten;
+    const isOriginalFirstChunk = index === 0 && (modeSelect?.value || 'original') === 'original';
+    const skipRewrite = alreadyRewritten ||
+      (isOriginalFirstChunk && !textLikelyNeedsTranslation(textToSend));
 
     let result;
     try {
