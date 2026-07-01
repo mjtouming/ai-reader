@@ -821,8 +821,12 @@ try {
     key: fs.readFileSync("/etc/letsencrypt/live/sona.solonova.top/privkey.pem"),
     cert: fs.readFileSync("/etc/letsencrypt/live/sona.solonova.top/fullchain.pem"),
   };
-  https.createServer(httpsOptions, app).listen(443, "0.0.0.0", () => {
+  const httpsServer = https.createServer(httpsOptions, app).listen(443, "0.0.0.0", () => {
     console.log("HTTPS running on https://sona.solonova.top");
+  });
+  // 长耗时请求（如 yt-dlp 提取字幕）连接容易被中间网络节点当空闲连接回收，开启 TCP keepalive 降低概率
+  httpsServer.on("connection", (socket) => {
+    socket.setKeepAlive(true, 20000);
   });
 } catch(e) {
   console.log("HTTPS 启动失败:", e.message);
