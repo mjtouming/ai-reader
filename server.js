@@ -771,6 +771,28 @@ app.post("/fetch-youtube", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "url is required" });
 
+  function getYtDlpErrorMessage(err, stderr) {
+    const detail = [err?.message, stderr].filter(Boolean).join("\n");
+    const lower = detail.toLowerCase();
+
+    if (err?.code === "ENOENT") {
+      return "服务器缺少 yt-dlp 命令，请检查安装";
+    }
+    if (err?.killed || lower.includes("timed out")) {
+      return "YouTube 字幕提取超时，请稍后重试";
+    }
+    if (
+      lower.includes("sign in to confirm") ||
+      lower.includes("not a bot") ||
+      lower.includes("cookies") ||
+      lower.includes("no longer valid") ||
+      lower.includes("rotated")
+    ) {
+      return "YouTube 登录态失效，请重新上传 cookies.txt";
+    }
+    return "视频无可用英文字幕";
+  }
+
   const ytDlpPath = process.env.YTDLP_PATH || "yt-dlp";
   const tmpBase = path.join(os.tmpdir(), `yt_sub_${Date.now()}`);
   const tmpFile = `${tmpBase}.en.vtt`;
@@ -791,8 +813,9 @@ app.post("/fetch-youtube", async (req, res) => {
 
   execFile(ytDlpPath, args, { timeout: 100000 }, (err, stdout, stderr) => {
     if (!fs.existsSync(tmpFile)) {
+      if (err) console.error("yt-dlp error:", err);
       console.error("yt-dlp stderr:", stderr);
-      return res.status(500).json({ error: "视频无字幕" });
+      return res.status(500).json({ error: getYtDlpErrorMessage(err, stderr) });
     }
 
     try {

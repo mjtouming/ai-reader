@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260416-6';
+import { generateAudioFromText } from './audioEngine.js?v=20260416-7';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -992,7 +992,6 @@ generateBtn?.addEventListener("click", async function () {
     textInput.value = ytData.text || "";
     text = textInput.value;
     modeSelect.value  = "original";
-    voiceSelect.value = "young_female";
     setStatus("字幕已提取，准备生成...", "info");
   }
 
