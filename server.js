@@ -838,14 +838,49 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
 // HTTPS 直连
+const http = require("http");
 const https = require("https");
+const tls = require("tls");
 try {
-  const httpsOptions = {
+  const sonaTlsOptions = {
     key: fs.readFileSync("/etc/letsencrypt/live/sona.solonova.top/privkey.pem"),
     cert: fs.readFileSync("/etc/letsencrypt/live/sona.solonova.top/fullchain.pem"),
   };
-  const httpsServer = https.createServer(httpsOptions, app).listen(443, "0.0.0.0", () => {
-    console.log("HTTPS running on https://sona.solonova.top");
+  const travelTlsOptions = {
+    key: fs.readFileSync("/etc/letsencrypt/live/travel.solonova.top/privkey.pem"),
+    cert: fs.readFileSync("/etc/letsencrypt/live/travel.solonova.top/fullchain.pem"),
+  };
+  const httpsOptions = {
+    ...sonaTlsOptions,
+    SNICallback(servername, callback) {
+      const options = servername === "travel.solonova.top" ? travelTlsOptions : sonaTlsOptions;
+      callback(null, tls.createSecureContext(options));
+    },
+  };
+  const httpsServer = https.createServer(httpsOptions, (req, res) => {
+    const hostname = (req.headers.host || "").split(":", 1)[0].toLowerCase();
+    if (hostname === "travel.solonova.top") {
+      const proxyReq = http.request({
+        hostname: "127.0.0.1",
+        port: 8089,
+        method: req.method,
+        path: req.url,
+        headers: { ...req.headers, host: "travel.solonova.top" },
+      }, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+      });
+      proxyReq.on("error", (error) => {
+        console.error("Travel proxy error:", error.message);
+        if (!res.headersSent) res.writeHead(502);
+        res.end("Bad Gateway");
+      });
+      req.pipe(proxyReq);
+      return;
+    }
+    app(req, res);
+  }).listen(443, "0.0.0.0", () => {
+    console.log("HTTPS running for sona.solonova.top and travel.solonova.top");
   });
   // 长耗时请求（如 yt-dlp 提取字幕）连接容易被中间网络节点当空闲连接回收，开启 TCP keepalive 降低概率
   httpsServer.on("connection", (socket) => {
