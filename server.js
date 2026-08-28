@@ -850,28 +850,36 @@ try {
     key: fs.readFileSync("/etc/letsencrypt/live/travel.solonova.top/privkey.pem"),
     cert: fs.readFileSync("/etc/letsencrypt/live/travel.solonova.top/fullchain.pem"),
   };
+  const englishTlsOptions = {
+    key: fs.readFileSync("/etc/letsencrypt/live/english.solonova.top/privkey.pem"),
+    cert: fs.readFileSync("/etc/letsencrypt/live/english.solonova.top/fullchain.pem"),
+  };
+  const siteTlsOptions = {
+    "travel.solonova.top": travelTlsOptions,
+    "english.solonova.top": englishTlsOptions,
+  };
   const httpsOptions = {
     ...sonaTlsOptions,
     SNICallback(servername, callback) {
-      const options = servername === "travel.solonova.top" ? travelTlsOptions : sonaTlsOptions;
+      const options = siteTlsOptions[servername] || sonaTlsOptions;
       callback(null, tls.createSecureContext(options));
     },
   };
   const httpsServer = https.createServer(httpsOptions, (req, res) => {
     const hostname = (req.headers.host || "").split(":", 1)[0].toLowerCase();
-    if (hostname === "travel.solonova.top") {
+    if (hostname === "travel.solonova.top" || hostname === "english.solonova.top") {
       const proxyReq = http.request({
         hostname: "127.0.0.1",
         port: 8089,
         method: req.method,
         path: req.url,
-        headers: { ...req.headers, host: "travel.solonova.top" },
+        headers: { ...req.headers, host: hostname },
       }, (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res);
       });
       proxyReq.on("error", (error) => {
-        console.error("Travel proxy error:", error.message);
+        console.error(`${hostname} proxy error:`, error.message);
         if (!res.headersSent) res.writeHead(502);
         res.end("Bad Gateway");
       });
@@ -880,7 +888,7 @@ try {
     }
     app(req, res);
   }).listen(443, "0.0.0.0", () => {
-    console.log("HTTPS running for sona.solonova.top and travel.solonova.top");
+    console.log("HTTPS running for sona.solonova.top, travel.solonova.top, and english.solonova.top");
   });
   // 长耗时请求（如 yt-dlp 提取字幕）连接容易被中间网络节点当空闲连接回收，开启 TCP keepalive 降低概率
   httpsServer.on("connection", (socket) => {
