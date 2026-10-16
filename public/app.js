@@ -1284,6 +1284,12 @@ window.addEventListener("load", async function () {
   // v1（localStorage 存全文）→ v2（全文在 IndexedDB）一次性迁移
   await migrateV1IfNeeded();
 
+  // 生成/播放已在途则跳过恢复：load 事件可能晚于首次引导的自动生成
+  // （DOMContentLoaded+800ms 触发 click，实测 load 晚 ~850ms 才到）。
+  // 此时 session 是引导刚写的，若继续恢复会把「播放中」状态错误覆盖成
+  // 「已恢复上次进度」，并把 isAutoPlaying 重置为 false 破坏自动连播。
+  if (currentJobId > 0) return;
+
   const session = loadSession();
   if (!session) return;
 
