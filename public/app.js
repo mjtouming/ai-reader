@@ -31,7 +31,7 @@ voiceSelect.addEventListener("change", () => {
     const jobId = currentJobId;
     playChunk(resumeIndex, jobId).catch(e => {
       if (e?.name !== "AbortError") {
-        setStatus("切换声线失败 ❌", "bad");
+        setStatus("切换声线失败 ❌", "bad", { busy: false });
         isAutoPlaying = false;
       }
     });
@@ -409,7 +409,8 @@ function setStatus(text, type = "info", opts = {}) {
   }
 
   if (generateBtn && typeof opts.busy === "boolean") {
-    generateBtn.disabled = false;
+    // busy=true 仅在"生成中"禁用按钮；播放中必须保持可点击（粘贴新文本重新生成）
+    generateBtn.disabled = opts.busy;
   }
   if (progressBar && opts.total != null) {
     progressBar.max   = opts.total;
@@ -794,7 +795,7 @@ async function playChunk(index, jobId) {
 
   updateNowPlayingTitle(currentFileName || (currentBookId && (() => { const s = loadShelf(); const b = s.books.find(x => x.id === currentBookId); return b?.title; })()) || deriveTitle());
   setStatus(`播放第 ${index + 1}/${total} 段`, "ok", {
-    busy: true,
+    busy: false,
     step: index + 1,
     total
   });
@@ -1143,7 +1144,7 @@ audioPlayer?.addEventListener("ended", async function () {
     renderChunkNav();
 
     setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
-      busy: true,
+      busy: false,
       step: currentIndex + 1,
       total: chunks.length
     });
