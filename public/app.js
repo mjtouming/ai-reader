@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260919-2';
+import { generateAudioFromText } from './audioEngine.js?v=20261016-1';
 import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
