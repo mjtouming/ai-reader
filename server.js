@@ -97,11 +97,18 @@ function runEdgeTTS({ inputText, voiceKey, outFile }) {
     p.stdin.write(inputText, "utf8");
     p.stdin.end();
 
+    // edge-tts 网络挂起时进程可能永不退出，180s 强杀避免请求悬挂
+    const killTimer = setTimeout(() => {
+      try { p.kill("SIGKILL"); } catch {}
+    }, 180000);
+
     p.on("error", (err) => {
+      clearTimeout(killTimer);
       reject(new Error("spawn error: " + err.message));
     });
 
     p.on("close", (code) => {
+      clearTimeout(killTimer);
       console.log("🐍 python exit code:", code);
       if (stdout.trim()) console.log("🐍 python stdout:\n" + stdout.trim());
       if (stderr.trim()) console.log("🐍 python stderr:\n" + stderr.trim());
@@ -596,6 +603,8 @@ ${inputText}
               ],
               temperature,
             }),
+            // 改写无超时会永久挂起，120s 兜底
+            signal: AbortSignal.timeout(120000),
           }
         );
 
@@ -693,6 +702,9 @@ app.post("/upload-word", upload.single("file"), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Word 解析失败" });
+  } finally {
+    // 上传临时文件用完即删，避免 uploads/ 无限堆积
+    if (req.file) fs.unlink(req.file.path, () => {});
   }
 });
 
@@ -721,6 +733,8 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "PDF 解析失败" });
+  } finally {
+    if (req.file) fs.unlink(req.file.path, () => {});
   }
 });
 
