@@ -1,14 +1,18 @@
 // ===== IndexedDB 打开 =====
+// DB v2：audio（音频缓存）+ texts（书籍全文，storage.js 使用）
 function openDB() {
   return new Promise((resolve, reject) => {
 
-    const req = indexedDB.open("ai_reader_audio_cache", 1);
+    const req = indexedDB.open("ai_reader_audio_cache", 2);
 
     req.onupgradeneeded = function (event) {
       const db = event.target.result;
 
       if (!db.objectStoreNames.contains("audio")) {
         db.createObjectStore("audio");
+      }
+      if (!db.objectStoreNames.contains("texts")) {
+        db.createObjectStore("texts");
       }
     };
 
@@ -70,6 +74,28 @@ function createCacheKey(text, mode, voice) {
 
 }
 
+// ===== 音频缓存软上限 =====
+// 缓存可随时重建：每写 20 次查一次站点存储用量，超过软上限整体清空 audio store
+let audioCacheSaveCount = 0;
+const AUDIO_CACHE_SOFT_LIMIT = 1.5 * 1024 * 1024 * 1024;
+
+function maybeTrimAudioCache() {
+  audioCacheSaveCount++;
+  if (audioCacheSaveCount % 20 !== 0) return;
+  if (!navigator.storage?.estimate) return;
+  navigator.storage.estimate().then(({ usage }) => {
+    if ((usage || 0) <= AUDIO_CACHE_SOFT_LIMIT) return;
+    openDB().then(db => new Promise(resolve => {
+      const tx = db.transaction("audio", "readwrite");
+      tx.objectStore("audio").clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    })).then(() => {
+      console.log("🧹 音频缓存超过软上限，已整体清空（可按需重新生成）");
+    });
+  }).catch(() => {});
+}
+
 // ===== 生成音频 =====
 // ✅ 修复1：增加 chunkIndex / totalChunks 参数，传给 /tts
 // ✅ 修复2：返回 { url, rewritten } 对象，而不是直接返回字符串
@@ -111,7 +137,10 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(errText);
+        const err = new Error(errText);
+        // 4xx（如 text is empty）是确定性失败，重试无意义；5xx 才值得重试
+        err.noRetry = response.status < 500;
+        throw err;
       }
 
       // ✅ 修复2：从响应头读取 rewritten 文本（需要服务端配合，见下方说明）
@@ -125,8 +154,9 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
 
       const audioBlob = await response.blob();
 
-      // ===== 写入缓存 =====
-      await saveCachedAudio(key, audioBlob);
+      // ===== 写入缓存（后台进行，不阻塞起播）=====
+      saveCachedAudio(key, audioBlob);
+      maybeTrimAudioCache();
 
       // ✅ 修复2：返回对象
       return { url: URL.createObjectURL(audioBlob), rewritten };
@@ -135,8 +165,8 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
 
       lastError = err;
 
-      // Abort 不 retry
-      if (err?.name === "AbortError") {
+      // Abort 与 4xx 不 retry
+      if (err?.name === "AbortError" || err?.noRetry) {
         throw err;
       }
 
