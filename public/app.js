@@ -205,7 +205,7 @@ function loadBook(book) {
     const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
     chunks = [...warmup, ...restParts];
   } else {
-    chunks = firstParts;
+    chunks = warmupParts0;
   }
 
   rewrittenChunks = [];
@@ -677,6 +677,7 @@ function textLikelyNeedsTranslation(text) {
 // ── Playback core ─────────────────────────────────────────────
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
+  restoreTime  = 0;   // 恢复进度只在"继续播放"路径生效，任何打断/跳段/换书都不得带入旧秒数
 
   if (currentAbort) {
     try { currentAbort.abort(); } catch {}
