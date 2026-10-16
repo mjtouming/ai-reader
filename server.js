@@ -1,4 +1,4 @@
-console.log("服务器版本：upload-word 已加载");
+console.log("灵听 server 启动中…");
 
 const express = require("express");
 const cors = require("cors");
@@ -6,7 +6,6 @@ require("dotenv").config();
 
 const multer = require("multer");
 const mammoth = require("mammoth");
-const pdfParse = require("pdf-parse");
 const fs = require("fs");
 const path = require("path");
 const { spawn, execFile } = require("child_process");
@@ -25,6 +24,70 @@ if (fs.existsSync(rewriteCachePath)) {
     rewriteCache = {};
   }
 }
+
+// rewrite cache 落盘策略：防抖 5s 批量写 + 条数上限（超出淘汰最旧条目）
+// 旧条目排前（从文件加载的在先、新写入的在后），按插入序近似 LRU
+const REWRITE_CACHE_MAX = 5000;
+let rewriteCacheDirty = false;
+let rewriteCacheSaveTimer = null;
+
+function pruneRewriteCache() {
+  const keys = Object.keys(rewriteCache);
+  if (keys.length <= REWRITE_CACHE_MAX) return;
+  const removeCount = keys.length - REWRITE_CACHE_MAX + 500;
+  for (let i = 0; i < removeCount; i++) delete rewriteCache[keys[i]];
+  console.log(`🧹 rewrite cache 超限，淘汰 ${removeCount} 条最旧记录`);
+}
+
+function scheduleRewriteCacheSave() {
+  rewriteCacheDirty = true;
+  pruneRewriteCache();
+  if (rewriteCacheSaveTimer) return;
+  rewriteCacheSaveTimer = setTimeout(() => {
+    rewriteCacheSaveTimer = null;
+    if (!rewriteCacheDirty) return;
+    rewriteCacheDirty = false;
+    try {
+      fs.writeFileSync(rewriteCachePath, JSON.stringify(rewriteCache, null, 2));
+    } catch (e) {
+      console.log("rewrite cache 写入失败:", e.message);
+    }
+  }, 5000);
+}
+
+// ===== tts_cache 启动清理（只增不减会吃满磁盘）=====
+const TTS_CACHE_MAX_BYTES =
+  Number(process.env.TTS_CACHE_MAX_BYTES) || 2 * 1024 * 1024 * 1024;
+
+function cleanupTtsCache() {
+  const outDir = path.join(__dirname, "tts_cache");
+  if (!fs.existsSync(outDir)) return;
+  try {
+    const files = fs.readdirSync(outDir).map((f) => {
+      const p = path.join(outDir, f);
+      let st;
+      try { st = fs.statSync(p); } catch { return null; }
+      return st.isFile() ? { p, size: st.size, mtime: st.mtimeMs } : null;
+    }).filter(Boolean);
+
+    let total = files.reduce((s, f) => s + f.size, 0);
+    console.log(`🧹 tts_cache：${files.length} 个文件，共 ${(total / 1048576).toFixed(1)}MB`);
+
+    if (total <= TTS_CACHE_MAX_BYTES) return;
+
+    files.sort((a, b) => a.mtime - b.mtime);
+    const target = TTS_CACHE_MAX_BYTES * 0.9;
+    let removed = 0;
+    for (const f of files) {
+      if (total <= target) break;
+      try { fs.unlinkSync(f.p); total -= f.size; removed++; } catch {}
+    }
+    console.log(`🧹 tts_cache 超限（上限 ${(TTS_CACHE_MAX_BYTES / 1073741824).toFixed(1)}GB），已删除 ${removed} 个最旧文件`);
+  } catch (e) {
+    console.log("tts_cache cleanup error:", e.message);
+  }
+}
+cleanupTtsCache();
 
 const fetch = global.fetch;
 
@@ -617,7 +680,7 @@ ${inputText}
         inputText = rewriteData?.choices?.[0]?.message?.content?.trim() || inputText;
 
         rewriteCache[cacheKey] = inputText;
-        fs.writeFileSync(rewriteCachePath, JSON.stringify(rewriteCache, null, 2));
+        scheduleRewriteCacheSave();
       }
     }
 
