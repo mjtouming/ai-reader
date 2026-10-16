@@ -1,5 +1,5 @@
 import { generateAudioFromText } from './audioEngine.js?v=20260919-2';
-import { saveProgress, loadProgress } from './storage.js';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -67,33 +67,56 @@ let preGeneratingSet = new Set();
 let preGenerateAbort = new AbortController();
 const PRE_WINDOW     = 2;    // 预生成窗口大小
 let lastSessionSave  = 0;
+let lastSavedTextSig = null;   // 已写入 IndexedDB 的全文指纹，避免每 2 秒重复全量写
+let storageWarnShown = false;  // 存储写入失败只提示一次
+let currentBookText  = null;   // 当前书（currentBookId）对应的全文，精确判断"文本是否属于当前书"
 
 // ── Keys ──────────────────────────────────────────────────────
-const SESSION_KEY = "ai_reader_session_v1";
-const SHELF_KEY   = "ai_reader_shelf_v1";
+// v2：localStorage 只存元数据，全文在 IndexedDB（storage.js texts store）
+const SESSION_KEY = "ai_reader_session_v2";
+const SHELF_KEY   = "ai_reader_shelf_v2";
 let currentBookId = null;
 
 // ── Session ───────────────────────────────────────────────────
-function saveSession(patch = {}) {
+// v2：localStorage 只存元数据指针（refId + 进度），全文按需写入 IndexedDB
+function saveSession() {
   try {
-    const prev = loadSession() || {};
+    const prev  = loadSession() || {};
+    const text  = textInput?.value || "";
+    const refId = currentRefId(text);
     const data = {
       ...prev,
-      text: textInput?.value || "",
-      chunks,
+      refId,
       currentIndex,
       maxReachedIndex,
       currentTime: audioPlayer?.currentTime || 0,
       mode:  modeSelect?.value  || "original",
       voice: voiceSelect?.value || "young_female",
       speed: speedSelect?.value || "1",
-      ...patch,
       updatedAt: Date.now()
     };
     localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+
+    // 全文有变化才写 IndexedDB，避免每 2 秒全量重复写
+    const sig = refId + ":" + text.length + ":" + chunks.length;
+    if (refId && sig !== lastSavedTextSig) {
+      lastSavedTextSig = sig;
+      saveTextRecord(refId, { text, chunks, fileName: currentFileName }).catch(e => {
+        console.log("saveTextRecord error:", e);
+        if (!storageWarnShown) {
+          storageWarnShown = true;
+          setStatus("本地存储写入失败，进度可能无法恢复", "bad");
+        }
+      });
+    }
+
     updateShelfProgress();
   } catch (e) {
     console.log("saveSession error:", e);
+    if (!storageWarnShown) {
+      storageWarnShown = true;
+      setStatus("本地保存失败（存储空间不足？）", "bad");
+    }
   }
 }
 
@@ -118,14 +141,13 @@ function saveShelf(shelf) {
   try { localStorage.setItem(SHELF_KEY, JSON.stringify(shelf)); } catch {}
 }
 
-function hashText(text) {
-  // djb2-like hash of first 500 chars for book identity
-  let h = 5381;
-  for (let i = 0; i < Math.min(text.length, 500); i++) {
-    h = ((h << 5) + h) + text.charCodeAt(i);
-    h = h & h;
-  }
-  return Math.abs(h).toString(36);
+// 会话全文的 IndexedDB 记录 key：当前文本与当前书全文完全一致时用书籍 id，
+// 否则（纯粘贴未入库/换了文本/书架满）用文本 hash 立独立记录。
+// 必须精确比较文本，长度对比会让"同长度不同文"错认成同一本书，覆盖书的内容。
+function currentRefId(text) {
+  if (!text) return null;
+  if (currentBookId && currentBookText === text) return currentBookId;
+  return hashText(text);
 }
 
 function deriveTitle() {
@@ -138,24 +160,31 @@ function deriveTitle() {
   return `未命名书籍 ${today}`;
 }
 
-function saveToShelf() {
+async function saveToShelf() {
   const text = textInput?.value?.trim() || "";
   if (!text || !chunks.length) return;
 
-  const id    = hashText(text);
+  const newId = hashText(text);
   const shelf = loadShelf();
-  const existing = shelf.books.find(b => b.id === id);
+  // 优先按新 hash 匹配；当前书全文完全一致时沿用旧 id——兼容 v1 迁移来的旧 id
+  let existing =
+    shelf.books.find(b => b.id === newId) ||
+    (currentBookId && currentBookText === text
+      ? shelf.books.find(b => b.id === currentBookId)
+      : null);
 
   if (!existing && shelf.books.length >= 10) {
     alert("书架已满（最多 10 本），请打开书架删除旧书再继续");
     return;
   }
 
+  // 书籍 id 保持稳定：已存在的书沿用原 id（含 v1 迁移来的旧 id）
+  const id = existing ? existing.id : newId;
   const book = {
     id,
     title:       deriveTitle(),
     fileName:    currentFileName || null,
-    text,
+    textLength:  text.length,
     totalChunks: chunks.length,
     currentIndex,
     maxReachedIndex,
@@ -167,6 +196,18 @@ function saveToShelf() {
     updatedAt: Date.now()
   };
 
+  // 全文写 IndexedDB（书架 localStorage 只存上面的元数据）
+  try {
+    await saveTextRecord(id, { text, chunks, fileName: currentFileName || null });
+    lastSavedTextSig = id + ":" + text.length + ":" + chunks.length;
+  } catch (e) {
+    console.log("saveTextRecord error:", e);
+    if (!storageWarnShown) {
+      storageWarnShown = true;
+      setStatus("书籍全文保存失败（本地存储异常）", "bad");
+    }
+  }
+
   if (existing) {
     Object.assign(existing, book);
   } else {
@@ -174,6 +215,7 @@ function saveToShelf() {
   }
 
   currentBookId       = id;
+  currentBookText     = text;
   shelf.currentBookId = id;
   saveShelf(shelf);
 }
@@ -191,15 +233,26 @@ function updateShelfProgress() {
   saveShelf(shelf);
 }
 
-function loadBook(book) {
+async function loadBook(book) {
   interruptPlayback();
-  textInput.value   = book.text;
+
+  // 全文从 IndexedDB 取（localStorage 只存元数据）
+  let rec = null;
+  try { rec = await loadTextRecord(book.id); } catch {}
+  const text = rec?.text || "";
+  if (!text) {
+    setStatus(`《${book.title}》原文数据缺失（本地缓存被清理），请重新导入文本`, "bad");
+    return;
+  }
+
+  textInput.value   = text;
+  currentFileName   = rec?.fileName || book.fileName || null;
   modeSelect.value  = (book.mode === "translate" ? "original" : book.mode) || "original";
   voiceSelect.value = book.voice || "young_female";
   speedSelect.value = book.speed || "1";
 
   // Re-split with same algorithm as generateBtn
-  const warmupParts0 = splitTextIntoChunks(book.text, { maxLen: 300, minLen: 150 });
+  const warmupParts0 = splitTextIntoChunks(text, { maxLen: 300, minLen: 150 });
   if (warmupParts0.length > 3) {
     const warmup   = warmupParts0.splice(0, 3);
     const restText = warmupParts0.join("\n\n");
@@ -214,8 +267,11 @@ function loadBook(book) {
   maxReachedIndex = book.maxReachedIndex ?? currentIndex;
   restoreTime     = book.currentTime || 0;
   currentBookId   = book.id;
+  currentBookText = text;
+  // IDB 里已有该书全文，标记指纹避免 saveSession 立刻重复写
+  lastSavedTextSig = book.id + ":" + text.length + ":" + chunks.length;
 
-  saveSession({ chunks, currentIndex, maxReachedIndex });
+  saveSession();
   renderChunkNav();
   updateNowPlayingTitle(book.title);
   const ppBtn = document.getElementById("playPauseBtn");
@@ -232,7 +288,12 @@ function deleteBook(id) {
   shelf.books = shelf.books.filter(b => b.id !== id);
   if (shelf.currentBookId === id) shelf.currentBookId = null;
   saveShelf(shelf);
-  if (currentBookId === id) currentBookId = null;
+  if (currentBookId === id) {
+    currentBookId   = null;
+    currentBookText = null;
+  }
+  // IndexedDB 里的全文一并删除
+  deleteTextRecord(id).catch(() => {});
 }
 
 function renderShelf() {
@@ -279,7 +340,10 @@ function renderShelf() {
 
     item.appendChild(info);
     item.appendChild(del);
-    item.addEventListener("click", () => { loadBook(book); closeSheet(); });
+    item.addEventListener("click", () => {
+      loadBook(book).catch(() => setStatus("打开书籍失败 ❌", "bad", { busy: false }));
+      closeSheet();
+    });
     list.appendChild(item);
   });
 }
@@ -303,6 +367,7 @@ function clearForNewBook() {
   currentIndex    = 0;
   maxReachedIndex = -1;
   currentBookId   = null;
+  currentBookText = null;
   currentFileName = null;
   renderChunkNav();
   setStatus("请粘贴文字或上传文件", "info");
@@ -342,7 +407,7 @@ async function jumpToChunk(index) {
   const jobId   = currentJobId;
   isAutoPlaying = true;
   renderChunkNav();
-  saveSession({ currentIndex });
+  saveSession();
   try {
     await playChunk(currentIndex, jobId);
   } catch (e) {
@@ -1046,8 +1111,8 @@ generateBtn?.addEventListener("click", async function () {
   maxReachedIndex = -1;
   rewrittenChunks = [];
 
-  saveSession({ chunks, currentIndex, maxReachedIndex });
-  saveToShelf();
+  await saveToShelf();
+  saveSession();
   renderChunkNav();
 
   isAutoPlaying = true;
@@ -1115,8 +1180,6 @@ audioPlayer?.addEventListener("timeupdate", function () {
     return;
   }
 
-  saveProgress(audioPlayer.currentTime);
-
   const now = Date.now();
   if (now - lastSessionSave > 2000) {
     saveSession();
@@ -1144,7 +1207,7 @@ audioPlayer?.addEventListener("ended", async function () {
   if (!isAutoPlaying) return;
 
   currentIndex += 1;
-  saveSession({ currentIndex });
+  saveSession();
 
   if (audioCache[currentIndex]) {
     const url = audioCache[currentIndex];
@@ -1216,14 +1279,15 @@ audioPlayer?.addEventListener("ended", async function () {
 });
 
 // ── Session restore ───────────────────────────────────────────
-window.addEventListener("load", function () {
+window.addEventListener("load", async function () {
+
+  // v1（localStorage 存全文）→ v2（全文在 IndexedDB）一次性迁移
+  await migrateV1IfNeeded();
 
   const session = loadSession();
   if (!session) return;
 
   try {
-    textInput.value   = session.text || "";
-    chunks            = session.chunks || [];
     currentIndex      = session.currentIndex || 0;
     maxReachedIndex   = session.maxReachedIndex ?? currentIndex;
     modeSelect.value  = (session.mode === "translate" ? "original" : session.mode) || "original";
@@ -1234,12 +1298,29 @@ window.addEventListener("load", function () {
       restoreTime = session.currentTime;
     }
 
-    // Restore current book id from shelf — 用文本 hash 匹配，避免 currentBookId 错位
+    // 全文从 IndexedDB 取回
+    let restoredText   = "";
+    let restoredChunks = [];
+    if (session.refId) {
+      const rec = await loadTextRecord(session.refId);
+      if (rec) {
+        restoredText   = rec.text || "";
+        restoredChunks = Array.isArray(rec.chunks) ? rec.chunks : [];
+      }
+    }
+    textInput.value = restoredText;
+    chunks = restoredChunks;
+    lastSavedTextSig = restoredText
+      ? session.refId + ":" + restoredText.length + ":" + restoredChunks.length
+      : null;
+
+    // refId 即书籍 id；匹配不上时回退 shelf.currentBookId（但文本归属未知，不设 currentBookText）
     const shelf = loadShelf();
-    const sessionText = session.text || "";
-    const sessionHash = sessionText ? hashText(sessionText) : null;
-    const matchedBook = sessionHash ? shelf.books.find(b => b.id === sessionHash) : null;
-    currentBookId = matchedBook ? matchedBook.id : (shelf.currentBookId || null);
+    const matchedBook = session.refId
+      ? (shelf?.books || []).find(b => b.id === session.refId)
+      : null;
+    currentBookId   = matchedBook ? matchedBook.id : (shelf?.currentBookId || null);
+    currentBookText = matchedBook ? restoredText : null;
     // 同步修正 shelf.currentBookId
     if (matchedBook && shelf.currentBookId !== matchedBook.id) {
       shelf.currentBookId = matchedBook.id;
@@ -1250,7 +1331,7 @@ window.addEventListener("load", function () {
       isAutoPlaying = false;
       renderChunkNav();
       // 恢复书名显示
-      const bookForRestore = matchedBook || shelf.books.find(b => b.id === currentBookId);
+      const bookForRestore = matchedBook || (shelf?.books || []).find(b => b.id === currentBookId);
       if (bookForRestore) updateNowPlayingTitle(bookForRestore.title);
       setStatus(
         `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
