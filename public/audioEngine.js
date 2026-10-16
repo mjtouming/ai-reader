@@ -59,18 +59,14 @@ async function saveCachedAudio(key, blob) {
 }
 
 // ===== 生成缓存 key =====
-function createCacheKey(text, mode, voice) {
+// SHA-256（C4d）：原 djb2 32-bit 空间在千段级别有真实碰撞概率，碰撞会播错音频。
+// 前缀升 v2：故意让旧弱哈希时代的缓存记录失效，避免新旧 key 空间混用。
+async function createCacheKey(text, mode, voice) {
 
-  const raw = "cosyvoice-http-v1|" + text + "|" + mode + "|" + voice;
+  const raw = "cosyvoice-http-v2|" + text + "|" + mode + "|" + voice;
 
-  let hash = 0;
-
-  for (let i = 0; i < raw.length; i++) {
-    hash = ((hash << 5) - hash) + raw.charCodeAt(i);
-    hash |= 0;
-  }
-
-  return "audio_" + Math.abs(hash);
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+  return "audio_" + [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
 
 }
 
@@ -126,7 +122,7 @@ function ensureStageSocket() {
 // ✅ 修复2：返回 { url, rewritten } 对象，而不是直接返回字符串
 export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks, skipRewrite = false) {
 
-  const key = createCacheKey(text, mode, voice);
+  const key = await createCacheKey(text, mode, voice);
 
   // ===== 先查缓存 =====
   const cached = await getCachedAudio(key);

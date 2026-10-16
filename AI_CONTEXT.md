@@ -37,6 +37,8 @@
 | story | STORYTELLER | 0.92 | 说书人，口语演绎 |
 | translate | TRANSLATE | 0.2 | 翻译为现代中文 |
 
+> **translate 状态说明（2026-10-16 审计确认）**：前端 UI 已删（modeSelect 只有原文/故事），但服务端 TRANSLATE 分支、前端 restore 映射（`session.mode === "translate" ? "original"`）与 tagline 仍保留。这是**刻意保留**的服务端兼容路径：翻译能力本体由 original 模式的 textLikelyNeedsTranslation 智能判断承接，translate 值仅作为老 session 数据的降级映射目标。不要当成半成品去"补全"或删除，改动前先确认老数据兼容性。
+
 ---
 
 ## 四、声线
