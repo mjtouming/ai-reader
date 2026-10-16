@@ -1,4 +1,4 @@
-import { generateAudioFromText } from './audioEngine.js?v=20260416-7';
+import { generateAudioFromText } from './audioEngine.js?v=20260919-2';
 import { saveProgress, loadProgress } from './storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────
@@ -1072,6 +1072,8 @@ playPauseBtn?.addEventListener("click", async function () {
   if (audioPlayer.paused) {
     try {
       await audioPlayer.play();
+      isAutoPlaying = true;
+      fillWindow(currentIndex, currentJobId);
       playPauseBtn.innerText = "⏸ 暂停";
     } catch (e) {
       console.log("播放失败:", e);

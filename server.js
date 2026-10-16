@@ -124,79 +124,69 @@ async function runCosyVoiceTTS({ inputText, voiceKey, outFile }) {
   };
 
   const voice = voiceMap[voiceKey] || voiceMap["young_female"];
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeoutMs = Math.max(180000, Math.ceil(inputText.length / 1000) * 120000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket("wss://dashscope.aliyuncs.com/api-ws/v1/inference", {
-      headers: { Authorization: `bearer ${apiKey}` },
-    });
-
-    const chunks = [];
-    let firstAudio = null;
-    const startTime = Date.now();
-    let settled = false;
-
-    const done = (err) => {
-      if (settled) return;
-      settled = true;
-      if (err) reject(err);
-      else resolve();
-    };
-
-    ws.on("open", () => {
-      const task = {
-        header: { task_id: `tts_${Date.now()}`, action: "run-task" },
-        payload: {
-          task_group: "audio",
-          task: "tts",
-          function: "SpeechSynthesizer",
-          model: "cosyvoice-v3-flash",
-          parameters: { voice, format: "mp3" },
-          input: { text: inputText },
+  try {
+    // The non-realtime HTTP API is designed for complete passages such as
+    // audiobooks. Sending the whole passage in one request preserves prosody
+    // and avoids the per-message truncation seen on the realtime WebSocket API.
+    const response = await fetch(
+      "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
         },
-      };
-      ws.send(JSON.stringify(task));
-    });
-
-    ws.on("message", (data, isBinary) => {
-      if (isBinary) {
-        if (!firstAudio) firstAudio = Date.now() - startTime;
-        chunks.push(data);
-      } else {
-        try {
-          const msg = JSON.parse(data.toString());
-          const event = msg?.header?.event;
-          if (event === "task-failed") {
-            ws.close();
-            done(new Error(`CosyVoice task-failed: ${JSON.stringify(msg)}`));
-            return;
-          }
-          if (event === "task-finished") {
-            const audio = Buffer.concat(chunks);
-            fs.writeFileSync(outFile, audio);
-            const totalMs = Date.now() - startTime;
-            console.log(`🎙️ CosyVoice done in ${totalMs}ms, ttfb=${firstAudio}ms, voice=${voice}, size=${audio.length}`);
-            ws.close();
-            done();
-          }
-        } catch (e) {
-          console.error("CosyVoice message parse error:", e);
-        }
+        body: JSON.stringify({
+          model: "cosyvoice-v3-flash",
+          input: {
+            text: inputText,
+            voice,
+            format: "mp3",
+          },
+        }),
+        signal: controller.signal,
       }
-    });
+    );
 
-    ws.on("error", (err) => done(new Error("WebSocket error: " + err.message)));
+    const raw = await response.text();
+    if (!response.ok) {
+      throw new Error(`CosyVoice HTTP ${response.status}: ${raw}`);
+    }
 
-    ws.on("close", () => {
-      if (!settled) {
-        done(new Error("CosyVoice WebSocket closed unexpectedly"));
-      }
-    });
+    const result = JSON.parse(raw);
+    const audioUrl = result?.output?.audio?.url;
+    if (!audioUrl || result?.output?.finish_reason !== "stop") {
+      throw new Error(`CosyVoice returned an incomplete result: ${raw}`);
+    }
 
-    setTimeout(() => {
-      ws.close();
-      done(new Error("CosyVoice timeout (120s)"));
-    }, 120000);
-  });
+    const audioResponse = await fetch(audioUrl, { signal: controller.signal });
+    if (!audioResponse.ok) {
+      throw new Error(`CosyVoice audio download failed: HTTP ${audioResponse.status}`);
+    }
+
+    const audio = Buffer.from(await audioResponse.arrayBuffer());
+    if (audio.length <= 100) {
+      throw new Error(`CosyVoice returned empty audio: ${audio.length} bytes`);
+    }
+
+    fs.writeFileSync(outFile, audio);
+    console.log(
+      `🎙️ CosyVoice HTTP done in ${Date.now() - startTime}ms, voice=${voice}, ` +
+      `chars=${inputText.length}, billed=${result?.usage?.characters}, size=${audio.length}`
+    );
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(`CosyVoice HTTP timeout (${Math.round(timeoutMs / 1000)}s)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function createRewriteKey(text, mode) {
@@ -623,9 +613,11 @@ ${inputText}
     }
 
     // ===== TTS cache key =====
+    const ttsProvider = process.env.TTS_PROVIDER || "edge";
+    const ttsCacheSalt = ttsProvider === "cosyvoice" ? "|cosyvoice-http-v1" : "";
     const ttsKey = crypto
       .createHash("sha1")
-      .update(inputText + "|" + (voice || "young_female"))
+      .update(inputText + "|" + (voice || "young_female") + ttsCacheSalt)
       .digest("hex");
 
     const outDir = path.join(__dirname, "tts_cache");
@@ -649,7 +641,6 @@ ${inputText}
     }
 
     if (needGenerate) {
-      const ttsProvider = process.env.TTS_PROVIDER || "edge";
       if (ttsProvider === "fish") {
         await runFishAudioTTS({ inputText, outFile });
       } else if (ttsProvider === "cosyvoice") {

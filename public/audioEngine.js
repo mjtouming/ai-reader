@@ -57,7 +57,7 @@ async function saveCachedAudio(key, blob) {
 // ===== 生成缓存 key =====
 function createCacheKey(text, mode, voice) {
 
-  const raw = text + "|" + mode + "|" + voice;
+  const raw = "cosyvoice-http-v1|" + text + "|" + mode + "|" + voice;
 
   let hash = 0;
 
