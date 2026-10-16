@@ -61,6 +61,7 @@ let currentAbort     = null;
 let currentJobId     = 0;
 let currentAudioUrl  = null;
 let currentFileName  = null;
+let activeGenIndex   = -1;  // 正在等待生成的段（B2 阶段推送过滤用）
 let audioCache       = {};   // index → url
 let preGeneratingSet = new Set();
 let preGenerateAbort = new AbortController();
@@ -675,6 +676,21 @@ function textLikelyNeedsTranslation(text) {
   return false;
 }
 
+// ── TTS 阶段事件（服务端 WS 推送，B2）──
+// 只显示"当前正在等待的段"的阶段；预生成段的阶段事件被过滤，避免覆盖播放状态
+window.addEventListener("tts-stage", (e) => {
+  const { stage, chunkIndex } = e.detail || {};
+  if (typeof chunkIndex !== "number" || chunkIndex - 1 !== activeGenIndex) return;
+  const label = stage === "rewrite" ? "AI 改写中" : stage === "tts" ? "语音合成中" : null;
+  if (!label) return;
+  setStatus(`第 ${activeGenIndex + 1}/${chunks.length} 段 · ${label}…`, "info", {
+    busy: true,
+    loading: true,
+    step: activeGenIndex + 1,
+    total: chunks.length
+  });
+});
+
 // ── Playback core ─────────────────────────────────────────────
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
@@ -742,6 +758,7 @@ async function playChunk(index, jobId) {
       (isOriginalFirstChunk && !textLikelyNeedsTranslation(textToSend));
 
     let result;
+    activeGenIndex = index;
     try {
       result = await generateAudioFromText(
         textToSend,
@@ -754,6 +771,7 @@ async function playChunk(index, jobId) {
         skipRewrite
       );
     } catch (e) {
+      activeGenIndex = -1;
       if (e?.name === "AbortError") {
         console.log("生成被取消");
         return;
@@ -768,6 +786,7 @@ async function playChunk(index, jobId) {
     }
   }
 
+  activeGenIndex = -1;
   if (jobId !== currentJobId) return;
   if (!audioUrl) throw new Error("audioUrl is null (TTS failed)");
 

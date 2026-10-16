@@ -96,6 +96,31 @@ function maybeTrimAudioCache() {
   }).catch(() => {});
 }
 
+// ===== TTS 阶段推送（WebSocket）=====
+// 服务端通过 WS 推送"改写中/合成中"阶段事件；连接失败静默降级，不影响生成流程
+let stageSocket = null;
+
+function ensureStageSocket() {
+  if (stageSocket && stageSocket.readyState <= 1) return;
+  try {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const socket = new WebSocket(`${proto}://${location.host}`);
+    socket.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg && msg.requestId) {
+          window.dispatchEvent(new CustomEvent("tts-stage", { detail: msg }));
+        }
+      } catch {}
+    };
+    socket.onerror = () => { if (stageSocket === socket) stageSocket = null; };
+    socket.onclose = () => { if (stageSocket === socket) stageSocket = null; };
+    stageSocket = socket;
+  } catch {
+    stageSocket = null;
+  }
+}
+
 // ===== 生成音频 =====
 // ✅ 修复1：增加 chunkIndex / totalChunks 参数，传给 /tts
 // ✅ 修复2：返回 { url, rewritten } 对象，而不是直接返回字符串
@@ -115,9 +140,15 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
   // ===== 自动 retry =====
   let lastError = null;
 
+  // 阶段推送关联 ID：每次生成一个，服务端用它标记阶段事件归属
+  const requestId = (crypto.randomUUID && crypto.randomUUID())
+    || `r_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
   for (let attempt = 1; attempt <= 3; attempt++) {
 
     try {
+
+      ensureStageSocket();
 
       const response = await fetch("/tts", {
         method: "POST",
@@ -130,7 +161,8 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
           // ✅ 修复1：把段落信息传给服务端
           chunkIndex,
           totalChunks,
-          skipRewrite
+          skipRewrite,
+          requestId
         }),
         signal
       });

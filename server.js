@@ -91,6 +91,32 @@ cleanupTtsCache();
 
 const fetch = global.fetch;
 
+// ===== TTS 阶段推送（WebSocket）=====
+// /tts 单段处理可达数十秒，通过 WS 推送"改写中/合成中"阶段事件，前端可实时显示进度
+const stageWssList = [];
+
+function attachStageWss(server, label) {
+  try {
+    const wss = new WebSocket.Server({ server });
+    stageWssList.push(wss);
+    console.log("WebSocket 阶段推送已挂载:", label);
+  } catch (e) {
+    console.log(`WebSocket 挂载失败(${label}):`, e.message);
+  }
+}
+
+function broadcastStage(payload) {
+  if (!stageWssList.length || !payload?.requestId) return;
+  const msg = JSON.stringify(payload);
+  for (const wss of stageWssList) {
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try { client.send(msg); } catch {}
+      }
+    });
+  }
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -559,6 +585,7 @@ app.post("/tts", async (req, res) => {
     chunkIndex,
     totalChunks,
     skipRewrite,
+    requestId,
   } = req.body;
   console.log("MODE:", mode);
   console.log("rewrite previous:", previous ? previous.slice(-60) : "NONE");
@@ -568,6 +595,9 @@ app.post("/tts", async (req, res) => {
     if (!inputText.trim()) {
       return res.status(400).json({ error: "text is empty" });
     }
+
+    const idx = Number.isFinite(Number(chunkIndex)) ? Number(chunkIndex) : 0;
+    const total = Number.isFinite(Number(totalChunks)) ? Number(totalChunks) : 0;
 
     const needRewrite = !skipRewrite && (mode === "story" || mode === "translate" || mode === "announcer" || mode === "original");
 
@@ -608,11 +638,11 @@ app.post("/tts", async (req, res) => {
           roleName = "ANNOUNCER";
         }
 
-        const idx = Number.isFinite(Number(chunkIndex)) ? Number(chunkIndex) : 0;
-        const total = Number.isFinite(Number(totalChunks)) ? Number(totalChunks) : 0;
         const chunkLabel = idx > 0 && total > 0 ? `${idx}/${total}` : idx > 0 ? `${idx}/?` : `?/?`;
 
         console.log(`rewrite meta: role=${roleName} chunk=${chunkLabel} previous=${previous ? "YES" : "NO"}`);
+
+        broadcastStage({ requestId, chunkIndex: idx, stage: "rewrite" });
 
         const prevText = previous ? String(previous).slice(-400) : "";
 
@@ -713,6 +743,7 @@ ${inputText}
     }
 
     if (needGenerate) {
+      broadcastStage({ requestId, chunkIndex: idx, stage: "tts" });
       if (ttsProvider === "fish") {
         await runFishAudioTTS({ inputText, outFile });
       } else if (ttsProvider === "cosyvoice") {
@@ -902,9 +933,10 @@ app.post("/fetch-youtube", async (req, res) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+const httpServer = app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
+attachStageWss(httpServer, `http:${PORT}`);
 // HTTPS 直连
 const http = require("http");
 const https = require("https");
@@ -958,6 +990,7 @@ try {
   }).listen(443, "0.0.0.0", () => {
     console.log("HTTPS running for sona.solonova.top, travel.solonova.top, and english.solonova.top");
   });
+  attachStageWss(httpsServer, "https:443");
   // 长耗时请求（如 yt-dlp 提取字幕）连接容易被中间网络节点当空闲连接回收，开启 TCP keepalive 降低概率
   httpsServer.on("connection", (socket) => {
     socket.setKeepAlive(true, 20000);
