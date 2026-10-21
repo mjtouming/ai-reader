@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20261021-1" />
+  <link rel="stylesheet" href="style.css?v=20261021-2" />
 </head>
 
 <body>
@@ -108,6 +108,17 @@
         <div class="text-box">
           <label class="sr-only" for="textInput">正文</label>
           <textarea id="textInput" placeholder="粘贴文章 / YouTube 链接，或上传文件…"></textarea>
+        </div>
+        <div id="frontMatterBar" class="front-matter-bar" hidden>
+          <span class="front-matter-msg">已跳过前置内容 <span id="frontMatterCount">0</span> 字</span>
+          <span class="front-matter-dot" aria-hidden="true">·</span>
+          <button type="button" id="frontMatterView" class="front-matter-link">查看</button>
+          <span class="front-matter-slash" aria-hidden="true">/</span>
+          <button type="button" id="frontMatterRestore" class="front-matter-link">恢复原文</button>
+        </div>
+        <div id="frontMatterPreview" class="front-matter-preview" hidden>
+          <div class="front-matter-preview-hd">已跳过的前置内容</div>
+          <pre id="frontMatterPreviewBody"></pre>
         </div>
       </div>
 
@@ -258,7 +269,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20261021-1"></script>
+  <script type="module" src="./app.js?v=20261021-2"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {

@@ -227,6 +227,56 @@ body {
 }
 .text-box textarea::placeholder { color: var(--subtle); }
 
+.front-matter-bar,
+.front-matter-preview {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.front-matter-bar[hidden],
+.front-matter-preview[hidden] { display: none !important; }
+
+.front-matter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 8px 10px;
+}
+.front-matter-msg { color: var(--muted); }
+.front-matter-dot,
+.front-matter-slash { color: var(--subtle); }
+.front-matter-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.front-matter-link:hover { opacity: 0.7; }
+.front-matter-preview { max-height: 36vh; overflow: auto; }
+.front-matter-preview-hd {
+  padding: 8px 10px 0;
+  color: var(--subtle);
+  letter-spacing: 0.3px;
+}
+.front-matter-preview pre {
+  margin: 0;
+  padding: 8px 10px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  color: var(--text);
+}
+
 /* ===== Actions Section ===== */
 .actions-section {
   display: flex;

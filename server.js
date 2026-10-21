@@ -823,7 +823,11 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
     if (result.error) {
       return res.status(422).json({ error: result.error });
     }
-    res.json({ text: result.text });
+    res.json({
+      text: result.text,
+      pages: Array.isArray(result.pages) ? result.pages : [],
+      toc: Array.isArray(result.toc) ? result.toc : []
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "PDF 解析失败" });
