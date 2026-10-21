@@ -575,6 +575,31 @@ ${COMMON_RULES}
 输出：只输出翻译后的中文正文。
 `;
 
+function logTts(message) {
+  console.log(`[${new Date().toISOString()}] ${message}`);
+}
+
+// 合成完成后的 MP3。客户端用 <audio> 直接拉这个地址，可以边下边播。
+app.get("/tts-audio/:key", (req, res) => {
+  const key = String(req.params.key || "");
+  if (!/^[a-f0-9]{40}$/.test(key)) {
+    res.status(404).end();
+    return;
+  }
+  const file = path.join(__dirname, "tts_cache", `tts_${key}.mp3`);
+  if (!fs.existsSync(file)) {
+    res.status(404).end();
+    return;
+  }
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  res.sendFile(file, (err) => {
+    if (err && !res.headersSent) {
+      res.status(err.statusCode || 404).end();
+    }
+  });
+});
+
 // ====== /tts ======
 app.post("/tts", async (req, res) => {
   const {
@@ -586,7 +611,16 @@ app.post("/tts", async (req, res) => {
     totalChunks,
     skipRewrite,
     requestId,
-  } = req.body;
+    delivery,
+  } = req.body || {};
+  const idx = Number.isFinite(Number(chunkIndex)) ? Number(chunkIndex) : 0;
+  const total = Number.isFinite(Number(totalChunks)) ? Number(totalChunks) : 0;
+  const reqLabel = requestId || "-";
+  const startedAt = Date.now();
+  let rewriteMs = 0;
+  let synthMs = 0;
+  let rewriteState = skipRewrite ? "skip" : "live";
+  logTts(`/tts start chunk=${idx}/${total || "?"} req=${reqLabel} mode=${mode || "-"} voice=${voice || "-"} chars=${String(text || "").length} skipRewrite=${!!skipRewrite}`);
   console.log("MODE:", mode);
   console.log("rewrite previous:", previous ? previous.slice(-60) : "NONE");
 
@@ -596,18 +630,18 @@ app.post("/tts", async (req, res) => {
       return res.status(400).json({ error: "text is empty" });
     }
 
-    const idx = Number.isFinite(Number(chunkIndex)) ? Number(chunkIndex) : 0;
-    const total = Number.isFinite(Number(totalChunks)) ? Number(totalChunks) : 0;
-
     const needRewrite = !skipRewrite && (mode === "story" || mode === "translate" || mode === "announcer" || mode === "original");
 
+    const rewriteStarted = Date.now();
     if (needRewrite) {
       const cacheKey = createRewriteKey(inputText, mode || "announcer");
 
       if (rewriteCache[cacheKey]) {
+        rewriteState = "cache";
         console.log("⚡ rewrite cache hit");
         inputText = rewriteCache[cacheKey];
       } else {
+        rewriteState = "live";
         if (!fetch) {
           return res.status(500).json({
             error: "Node.js 版本过低：缺少内置 fetch。请升级到 Node 18+。",
@@ -713,6 +747,7 @@ ${inputText}
         scheduleRewriteCacheSave();
       }
     }
+    rewriteMs = Date.now() - rewriteStarted;
 
     // ===== TTS cache key =====
     const ttsProvider = process.env.TTS_PROVIDER || "edge";
@@ -730,6 +765,7 @@ ${inputText}
     console.log("🎧 TTS request:", { mode, voice, chars: inputText.length });
 
     let needGenerate = true;
+    const synthStarted = Date.now();
 
     if (fs.existsSync(outFile)) {
       const stat = fs.statSync(outFile);
@@ -764,9 +800,25 @@ ${inputText}
     if (!fs.existsSync(outFile) || fs.statSync(outFile).size === 0) {
       throw new Error("edge-tts did not produce output file or file is empty: " + outFile);
     }
+    synthMs = Date.now() - synthStarted;
+
+    const audioBytes = fs.statSync(outFile).size;
+    const wantsUrl = delivery === "url";
+    logTts(`/tts done chunk=${idx}/${total || "?"} req=${reqLabel} mode=${mode || "-"} voice=${voice || "-"} chars=${inputText.length} rewriteMs=${rewriteMs} synthMs=${synthMs} audioBytes=${audioBytes} delivery=${wantsUrl ? "url" : "inline"} cache=${needGenerate ? "miss" : "hit"} rewrite=${rewriteState}`);
+
+    res.setHeader("X-Rewritten-Text", encodeURIComponent(inputText));
+    res.setHeader("X-Audio-Url", `/tts-audio/${ttsKey}`);
+    res.setHeader("Cache-Control", "no-store");
+
+    // 新客户端只拿地址，MP3 由 <audio> 拉 /tts-audio，预取不用等正文下完。
+    if (wantsUrl) {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Length", "0");
+      res.status(200).end();
+      return;
+    }
 
     res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("X-Rewritten-Text", encodeURIComponent(inputText));
 
     const stream = fs.createReadStream(outFile);
 
@@ -781,7 +833,7 @@ ${inputText}
 
     stream.pipe(res);
   } catch (error) {
-    console.error("❌ /tts error:", error);
+    console.error(`[${new Date().toISOString()}] /tts error chunk=${idx}/${total || "?"} req=${reqLabel} rewriteMs=${rewriteMs} synthMs=${synthMs} elapsedMs=${Date.now() - startedAt} ${error?.message || error}`);
     res.status(500).json({
       error: String(error?.message || error),
     });

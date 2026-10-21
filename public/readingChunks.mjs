@@ -12,12 +12,22 @@ export const CHUNK_ABS_MAX = 2200;
 export const CHUNK_GROWTH = 1.6;
 const TINY_PARAGRAPH = 40;
 
-export function maxCharsForChunk(index, prevLen) {
+export function maxCharsForChunk(index, prevLen, prevBudget) {
   const ladder = CHUNK_LADDER[Math.min(Math.max(index, 0), CHUNK_LADDER.length - 1)];
   if (!prevLen) return CHUNK_LADDER[0];
-  const growthCap = Math.max(1, Math.floor(prevLen * CHUNK_GROWTH));
-  // 上一段因为“不能硬切”已经超过本步阶梯时，不再把下一段硬压回更短的阶梯。
-  if (prevLen > ladder) return Math.min(CHUNK_ABS_MAX, Math.max(ladder, growthCap));
+  const budget = prevBudget > 0
+    ? prevBudget
+    : CHUNK_LADDER[Math.min(Math.max(index - 1, 0), CHUNK_LADDER.length - 1)];
+  // 上一段因为“不能硬切”已经超过本步阶梯时，按实际长度的 1.6 倍放行，不硬压回更短的阶梯。
+  if (prevLen > ladder) {
+    const growthCap = Math.max(1, Math.floor(prevLen * CHUNK_GROWTH));
+    return Math.min(CHUNK_ABS_MAX, Math.max(ladder, growthCap));
+  }
+  // 上一段的预算没写满（目录行、短段）时拉回那次预算，避免下一段跟着实际字数越缩越短。
+  // 已经接近预算时仍按实际字数的 1.6 倍封顶，播放才盖得住下一段合成。
+  const shortfall = prevLen < budget * 0.7;
+  const basis = shortfall ? budget : prevLen;
+  const growthCap = Math.max(1, Math.floor(basis * CHUNK_GROWTH));
   return Math.min(CHUNK_ABS_MAX, ladder, growthCap);
 }
 
@@ -87,10 +97,12 @@ export function buildReadingChunks(text) {
   if (!units.length) return [];
 
   const chunks = [];
+  let prevBudget = 0;
   let i = 0;
   while (i < units.length) {
     const prevLen = chunks.length ? chunks[chunks.length - 1].length : 0;
-    const limit = maxCharsForChunk(chunks.length, prevLen);
+    const limit = maxCharsForChunk(chunks.length, prevLen, prevBudget);
+    prevBudget = limit;
     let buf = "";
     while (i < units.length) {
       const u = units[i];

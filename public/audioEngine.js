@@ -117,20 +117,42 @@ function ensureStageSocket() {
   }
 }
 
+// 只接受本站 /tts-audio/<id>，避免把响应头里的地址直接拿去播。
+function safeAudioUrl(value) {
+  if (!value || typeof value !== "string") return null;
+  try {
+    const u = new URL(value, location.origin);
+    if (u.origin !== location.origin) return null;
+    if (!/^\/tts-audio\/[a-zA-Z0-9_-]+$/.test(u.pathname)) return null;
+    return u.pathname + u.search;
+  } catch {
+    return null;
+  }
+}
+
 // ===== 生成音频 =====
 // ✅ 修复1：增加 chunkIndex / totalChunks 参数，传给 /tts
 // ✅ 修复2：返回 { url, rewritten } 对象，而不是直接返回字符串
-export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks, skipRewrite = false) {
+// delivery=url：改写稿在响应头里就返回，MP3 交给 <audio> 边下边播。
+// onContext 在正文下载之前调用，下一段才能在这一段还在下的时候开始合成。
+export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks, skipRewrite = false, onContext = null) {
 
   const key = await createCacheKey(text, mode, voice);
 
   // ===== 先查缓存 =====
   const cached = await getCachedAudio(key);
 
-  if (cached) {
+  if (cached instanceof Blob) {
     console.log("🎧 使用缓存音频");
     // ✅ 修复2：缓存命中也返回对象格式
     return { url: URL.createObjectURL(cached), rewritten: null };
+  }
+  if (cached && typeof cached.url === "string") {
+    const cachedUrl = safeAudioUrl(cached.url);
+    if (cachedUrl) {
+      console.log("🎧 使用缓存音频");
+      return { url: cachedUrl, rewritten: null };
+    }
   }
 
   // ===== 自动 retry =====
@@ -158,7 +180,9 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
           chunkIndex,
           totalChunks,
           skipRewrite,
-          requestId
+          requestId,
+          // 空 body + X-Audio-Url，让 <audio> 自己拉 MP3，预取不必等整段下完。
+          delivery: "url"
         }),
         signal
       });
@@ -178,6 +202,30 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
         rewritten = raw ? decodeURIComponent(raw) : null;
       } catch (e) {
         console.log("X-Rewritten-Text decode 失败，忽略:", e);
+      }
+
+      // 头已经到了。先交上文，再读正文；慢链路上正文时间和成片时长差不多。
+      if (typeof onContext === "function") {
+        try { onContext(rewritten); } catch (e) {
+          console.log("onContext 失败，忽略:", e);
+        }
+      }
+
+      const remoteUrl = safeAudioUrl(response.headers.get("X-Audio-Url"));
+      if (remoteUrl) {
+        try {
+          await response.arrayBuffer();
+        } catch (e) {
+          if (e?.name === "AbortError") throw e;
+        }
+        if (signal?.aborted) {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          throw err;
+        }
+        saveCachedAudio(key, { url: remoteUrl });
+        maybeTrimAudioCache();
+        return { url: remoteUrl, rewritten };
       }
 
       const audioBlob = await response.blob();
