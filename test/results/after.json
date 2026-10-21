@@ -1,0 +1,210 @@
+{
+  "label": "after",
+  "assert": true,
+  "timeScale": 10,
+  "genSecPerChar": 0.1,
+  "playSecPerChar": 0.19,
+  "publicRoot": "/workspace/public",
+  "textChars": 26013,
+  "checks": {
+    "singleRequest": true,
+    "gapsNearZero": true,
+    "storyPrevious": true,
+    "grew": true,
+    "voiceNoCrosstalk": true,
+    "bookNoCrosstalk": true
+  },
+  "errors": [],
+  "main": {
+    "rows": [
+      {
+        "chunkIndex": 1,
+        "textLen": 140,
+        "textHead": "序\n\n第1句：天色渐渐暗了下来，街上的灯一盏盏亮",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": null,
+        "reqStartMs": 181,
+        "reqEndMs": 1589,
+        "playMs": 1596
+      },
+      {
+        "chunkIndex": 2,
+        "textLen": 206,
+        "textHead": "第8句：老先生咳了两声，重新捧起了书。第9句：天",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改1〗序\n\n第1句：天色渐渐暗了下来，街上的灯",
+        "reqStartMs": 1624,
+        "reqEndMs": 3686,
+        "playMs": 4381
+      },
+      {
+        "chunkIndex": 3,
+        "textLen": 306,
+        "textHead": "第18句：他说完这番话便推门走了出去。第19句：",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改2〗第8句：老先生咳了两声，重新捧起了书。第",
+        "reqStartMs": 3688,
+        "reqEndMs": 6751,
+        "playMs": 8387
+      },
+      {
+        "chunkIndex": 4,
+        "textLen": 474,
+        "textHead": "第33句：天色渐渐暗了下来，街上的灯一盏盏亮起。",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改3〗第18句：他说完这番话便推门走了出去。第",
+        "reqStartMs": 6754,
+        "reqEndMs": 11502,
+        "playMs": 14282
+      },
+      {
+        "chunkIndex": 5,
+        "textLen": 738,
+        "textHead": "第56句：老先生咳了两声，重新捧起了书。第57句",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改4〗第33句：天色渐渐暗了下来，街上的灯一盏",
+        "reqStartMs": 11503,
+        "reqEndMs": 18888,
+        "playMs": 23378
+      },
+      {
+        "chunkIndex": 6,
+        "textLen": 1164,
+        "textHead": "第92句：风从窗缝里钻进来，吹得灯火轻轻摇晃。第",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改5〗第56句：老先生咳了两声，重新捧起了书。",
+        "reqStartMs": 18891,
+        "reqEndMs": 30535,
+        "playMs": 37497
+      },
+      {
+        "chunkIndex": 7,
+        "textLen": 1852,
+        "textHead": "第146句：他说完这番话便推门走了出去。第147",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改6〗第92句：风从窗缝里钻进来，吹得灯火轻轻",
+        "reqStartMs": 30538,
+        "reqEndMs": 49064,
+        "playMs": 59712
+      },
+      {
+        "chunkIndex": 8,
+        "textLen": 2180,
+        "textHead": "第232句：老先生咳了两声，重新捧起了书。第23",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改7〗第146句：他说完这番话便推门走了出去。",
+        "reqStartMs": 49067,
+        "reqEndMs": 70874,
+        "playMs": 94985
+      }
+    ],
+    "gaps": [
+      {
+        "between": "1→2",
+        "gapMs": 1
+      },
+      {
+        "between": "2→3",
+        "gapMs": 1
+      },
+      {
+        "between": "3→4",
+        "gapMs": 1
+      },
+      {
+        "between": "4→5",
+        "gapMs": 2
+      },
+      {
+        "between": "5→6",
+        "gapMs": 1
+      },
+      {
+        "between": "6→7",
+        "gapMs": 1
+      },
+      {
+        "between": "7→8",
+        "gapMs": 1
+      }
+    ],
+    "duplicateKeys": [],
+    "missingPrevious": [],
+    "requestCount": 10,
+    "playCount": 8
+  },
+  "crosstalk": {
+    "voice": {
+      "plays": [
+        {
+          "chunkIndex": 17,
+          "voice": "young_female",
+          "textHead": "第1111句：孩子趴在窗边，眼睛一眨也不眨。第1"
+        }
+      ],
+      "oldVoicePlayed": false,
+      "aborts": [
+        {
+          "chunkIndex": 10,
+          "voice": "elder_male",
+          "textHead": "第434句：他说完这番话便推门走了出去。第435"
+        },
+        {
+          "chunkIndex": 17,
+          "voice": "elder_male",
+          "textHead": "第1111句：孩子趴在窗边，眼睛一眨也不眨。第1"
+        }
+      ]
+    },
+    "jump": null,
+    "book": {
+      "shelf": [
+        "城南旧事别册从此处另…",
+        "序第1句：天色渐…"
+      ],
+      "plays": [
+        {
+          "chunkIndex": 17,
+          "voice": "elder_male",
+          "textHead": "第1111句：孩子趴在窗边，眼睛一眨也不眨。第1"
+        }
+      ],
+      "playedBookB": false
+    },
+    "jumpHeld": {
+      "id": 11,
+      "chunkIndex": 17,
+      "voice": "elder_male",
+      "textHead": "第1111句：孩子趴在窗边，眼睛一眨也不眨。第1"
+    },
+    "bookHeld": {
+      "id": 13,
+      "chunkIndex": 1,
+      "voice": "young_female",
+      "textHead": "城南旧事别册从此处另起一本，用来确认换书之后不会"
+    }
+  },
+  "pageErrors": [
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:35143/' failed: Error during WebSocket handshake: Unexpected response code: 200"
+  ],
+  "serverAborts": []
+}

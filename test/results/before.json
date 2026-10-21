@@ -1,0 +1,223 @@
+{
+  "label": "before",
+  "assert": false,
+  "timeScale": 10,
+  "genSecPerChar": 0.1,
+  "playSecPerChar": 0.19,
+  "publicRoot": "/tmp/sona-baseline-public",
+  "textChars": 26013,
+  "checks": {
+    "singleRequest": false,
+    "gapsNearZero": false,
+    "storyPrevious": false,
+    "grew": true,
+    "voiceNoCrosstalk": true,
+    "bookNoCrosstalk": true
+  },
+  "errors": [],
+  "main": {
+    "rows": [
+      {
+        "chunkIndex": 1,
+        "textLen": 1,
+        "textHead": "序",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": null,
+        "reqStartMs": 178,
+        "reqEndMs": 201,
+        "playMs": 207
+      },
+      {
+        "chunkIndex": 2,
+        "textLen": 292,
+        "textHead": "第1句：天色渐渐暗了下来，街上的灯一盏盏亮起。 ",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改1〗序",
+        "reqStartMs": 367,
+        "reqEndMs": 3164,
+        "playMs": 3296
+      },
+      {
+        "chunkIndex": 3,
+        "textLen": 213,
+        "textHead": "第15句：孩子趴在窗边，眼睛一眨也不眨。 第16",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改2〗第1句：天色渐渐暗了下来，街上的灯一盏盏",
+        "reqStartMs": 3166,
+        "reqEndMs": 5300,
+        "playMs": 8936
+      },
+      {
+        "chunkIndex": 4,
+        "textLen": 2091,
+        "textHead": "第25句：天色渐渐暗了下来，街上的灯一盏盏亮起。",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改3〗第15句：孩子趴在窗边，眼睛一眨也不眨。",
+        "reqStartMs": 13069,
+        "reqEndMs": 24221,
+        "playMs": 33991
+      },
+      {
+        "chunkIndex": 5,
+        "textLen": 2166,
+        "textHead": "第121句：天色渐渐暗了下来，街上的灯一盏盏亮起",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": null,
+        "reqStartMs": 8941,
+        "reqEndMs": 30607,
+        "playMs": 73807
+      },
+      {
+        "chunkIndex": 6,
+        "textLen": 2166,
+        "textHead": "第217句：天色渐渐暗了下来，街上的灯一盏盏亮起",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": null,
+        "reqStartMs": 24225,
+        "reqEndMs": 45892,
+        "playMs": 115064
+      },
+      {
+        "chunkIndex": 7,
+        "textLen": 2166,
+        "textHead": "第313句：天色渐渐暗了下来，街上的灯一盏盏亮起",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改6〗第217句：天色渐渐暗了下来，街上的灯一",
+        "reqStartMs": 73814,
+        "reqEndMs": 95482,
+        "playMs": 156320
+      },
+      {
+        "chunkIndex": 8,
+        "textLen": 2166,
+        "textHead": "第409句：天色渐渐暗了下来，街上的灯一盏盏亮起",
+        "voice": "elder_male",
+        "mode": "story",
+        "previousHead": "〖改7〗第313句：天色渐渐暗了下来，街上的灯一",
+        "reqStartMs": 115069,
+        "reqEndMs": 136737,
+        "playMs": 197575
+      }
+    ],
+    "gaps": [
+      {
+        "between": "1→2",
+        "gapMs": 2930
+      },
+      {
+        "between": "2→3",
+        "gapMs": 1
+      },
+      {
+        "between": "3→4",
+        "gapMs": 20923
+      },
+      {
+        "between": "4→5",
+        "gapMs": 1
+      },
+      {
+        "between": "5→6",
+        "gapMs": 1
+      },
+      {
+        "between": "6→7",
+        "gapMs": 2
+      },
+      {
+        "between": "7→8",
+        "gapMs": 1
+      }
+    ],
+    "duplicateKeys": [
+      {
+        "key": "story|elder_male|2|292|第1句：天色渐渐暗了下来，街上的灯一盏盏亮起。 ",
+        "count": 2
+      },
+      {
+        "key": "story|elder_male|4|2091|第25句：天色渐渐暗了下来，街上的灯一盏盏亮起。",
+        "count": 2
+      }
+    ],
+    "missingPrevious": [
+      4,
+      5,
+      6
+    ],
+    "requestCount": 12,
+    "playCount": 8
+  },
+  "crosstalk": {
+    "voice": {
+      "plays": [
+        {
+          "chunkIndex": 16,
+          "voice": "young_female",
+          "textHead": "第1129句：天色渐渐暗了下来，街上的灯一盏盏亮"
+        }
+      ],
+      "oldVoicePlayed": false,
+      "aborts": [
+        {
+          "chunkIndex": 10,
+          "voice": "elder_male",
+          "textHead": "第601句：天色渐渐暗了下来，街上的灯一盏盏亮起"
+        },
+        {
+          "chunkIndex": 16,
+          "voice": "elder_male",
+          "textHead": "第1129句：天色渐渐暗了下来，街上的灯一盏盏亮"
+        }
+      ]
+    },
+    "jump": null,
+    "book": {
+      "shelf": [
+        "城南旧事别册从此处另…",
+        "序第1句：天色渐…"
+      ],
+      "plays": [
+        {
+          "chunkIndex": 16,
+          "voice": "elder_male",
+          "textHead": "第1129句：天色渐渐暗了下来，街上的灯一盏盏亮"
+        }
+      ],
+      "playedBookB": false
+    },
+    "jumpHeld": {
+      "id": 13,
+      "chunkIndex": 16,
+      "voice": "elder_male",
+      "textHead": "第1129句：天色渐渐暗了下来，街上的灯一盏盏亮"
+    },
+    "bookHeld": {
+      "id": 15,
+      "chunkIndex": 1,
+      "voice": "young_female",
+      "textHead": "城南旧事别册从此处另起一本，用来确认换书之后不会"
+    }
+  },
+  "pageErrors": [
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200",
+    "WebSocket connection to 'ws://127.0.0.1:36043/' failed: Error during WebSocket handshake: Unexpected response code: 200"
+  ],
+  "serverAborts": []
+}
