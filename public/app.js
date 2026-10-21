@@ -1,6 +1,7 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261021-1';
+import { generateAudioFromText } from './audioEngine.js?v=20261021-2';
 import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js';
 import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261021-1';
+import { cleanBookText } from './bookCleaner.mjs?v=20261021-2';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -71,12 +72,36 @@ let lastSessionSave  = 0;
 let lastSavedTextSig = null;   // 已写入 IndexedDB 的全文指纹，避免每 2 秒重复全量写
 let storageWarnShown = false;  // 存储写入失败只提示一次
 let currentBookText  = null;   // 当前书（currentBookId）对应的全文，精确判断"文本是否属于当前书"
+let currentFrontMatter = null; // 本次加载洗掉的前置页，原文在 IndexedDB，不进 localStorage
+let chunksFromCleaned = false; // 当前分段是不是用清洗后的文本生成的
+let userInputEpoch = 0;        // 用户换了文本之后，迟到的 session 恢复不能再覆盖
+let sessionRestoreStarted = false;
+
+function noteUserInput() {
+  userInputEpoch += 1;
+}
 
 // ── Keys ──────────────────────────────────────────────────────
 // v2：localStorage 只存元数据，全文在 IndexedDB（storage.js texts store）
 const SESSION_KEY = "ai_reader_session_v2";
 const SHELF_KEY   = "ai_reader_shelf_v2";
 let currentBookId = null;
+
+function sameBookText(a, b) {
+  return String(a || "").trim() === String(b || "").trim();
+}
+
+// 书架/会话写 IndexedDB 时只附一个短指针。原文记录单独放在 texts store。
+function textRecord(text, chunkList, fileName, explicitRef) {
+  const rec = { text, chunks: chunkList, fileName: fileName || null };
+  const ref = explicitRef || (
+    currentFrontMatter && sameBookText(text, currentFrontMatter.cleaned)
+      ? currentFrontMatter.refId
+      : null
+  );
+  if (ref) rec.frontMatterRef = ref;
+  return rec;
+}
 
 // ── Session ───────────────────────────────────────────────────
 // v2：localStorage 只存元数据指针（refId + 进度），全文按需写入 IndexedDB
@@ -102,7 +127,7 @@ function saveSession() {
     const sig = refId + ":" + text.length + ":" + chunks.length;
     if (refId && sig !== lastSavedTextSig) {
       lastSavedTextSig = sig;
-      saveTextRecord(refId, { text, chunks, fileName: currentFileName }).catch(e => {
+      saveTextRecord(refId, textRecord(text, chunks, currentFileName)).catch(e => {
         console.log("saveTextRecord error:", e);
         if (!storageWarnShown) {
           storageWarnShown = true;
@@ -199,7 +224,7 @@ async function saveToShelf() {
 
   // 全文写 IndexedDB（书架 localStorage 只存上面的元数据）
   try {
-    await saveTextRecord(id, { text, chunks, fileName: currentFileName || null });
+    await saveTextRecord(id, textRecord(text, chunks, currentFileName || null));
     lastSavedTextSig = id + ":" + text.length + ":" + chunks.length;
   } catch (e) {
     console.log("saveTextRecord error:", e);
@@ -236,6 +261,9 @@ function updateShelfProgress() {
 
 async function loadBook(book) {
   interruptPlayback();
+  currentFrontMatter = null;
+  chunksFromCleaned = false;
+  hideFrontMatterBar();
 
   // 全文从 IndexedDB 取（localStorage 只存元数据）
   let rec = null;
@@ -257,8 +285,9 @@ async function loadBook(book) {
   const savedChunks = Array.isArray(rec?.chunks) ? rec.chunks : null;
   const reused = savedChunksUsable(savedChunks);
   chunks = resolvePlaybackChunks(text, reused ? savedChunks : null);
+  await rememberFrontMatter(rec, text);
   if (!reused && chunks.length) {
-    saveTextRecord(book.id, { text, chunks, fileName: currentFileName }).catch(e => {
+    saveTextRecord(book.id, textRecord(text, chunks, currentFileName, rec?.frontMatterRef)).catch(e => {
       console.log("saveTextRecord error:", e);
     });
   }
@@ -293,9 +322,14 @@ function deleteBook(id) {
   if (currentBookId === id) {
     currentBookId   = null;
     currentBookText = null;
+    currentFrontMatter = null;
+    chunksFromCleaned = false;
+    hideFrontMatterBar();
   }
-  // IndexedDB 里的全文一并删除
-  deleteTextRecord(id).catch(() => {});
+  loadTextRecord(id).then(rec => {
+    if (rec?.frontMatterRef) deleteTextRecord(rec.frontMatterRef).catch(() => {});
+    return deleteTextRecord(id);
+  }).catch(() => {});
 }
 
 function renderShelf() {
@@ -362,6 +396,7 @@ function closeSheet() {
 }
 
 function clearForNewBook() {
+  noteUserInput();
   interruptPlayback("准备添加新书");
   textInput.value = "";
   chunks          = [];
@@ -372,6 +407,9 @@ function clearForNewBook() {
   currentBookId   = null;
   currentBookText = null;
   currentFileName = null;
+  currentFrontMatter = null;
+  chunksFromCleaned = false;
+  hideFrontMatterBar();
   renderChunkNav();
   setStatus("请粘贴文字或上传文件", "info");
   closeSheet();
@@ -488,167 +526,184 @@ function setStatus(text, type = "info", opts = {}) {
   }
 }
 
-// ── Text processing ───────────────────────────────────────────
-// 分段在 readingChunks.mjs（渐进段长 + 旧分段兼容）。这里只留文档清洗。
-function cleanBookTextForReading(rawText) {
-  const text = (rawText || "").replace(/\r/g, "").trim();
-  if (!text) return "";
-
-  const MAX_HEAD_LINES = 400;
-  const lines = text.split("\n");
-
-  const head = lines.slice(0, MAX_HEAD_LINES);
-  const tail = lines.slice(MAX_HEAD_LINES);
-
-  const metaLineRe = new RegExp(
-    [
-      "^\\s*(作者|编者|译者|校注|整理|出品|出版|出版社|出版方|出品方|责任编辑|责任编辑|策划|监制)\\s*[:：].*$",
-      "^\\s*(ISBN|书号|CIP|版次|印次|定价|字数|开本|装帧|页数|印刷|印刷厂|发行|网址|邮箱|电话)\\s*[:：].*$",
-      "^\\s*(版权|版权声明|版权所有|版权信息|著作权|免责声明|前言|序言|引言|推荐序|出版说明|再版说明)\\s*$",
-      "^\\s*©\\s*\\d{4}.*$",
-      "^\\s*All\\s+rights\\s+reserved\\s*.*$",
-      "^\\s*\\d{3}-\\d+-\\d+-\\d+-\\d+\\s*$",
-      "^\\s*978[\\d\\-]+\\s*$",
-      "^\\s*\\d{4}\\s*年.*(版|次|印).*$",
-      "^\\s*\\d+\\s*mm\\s*[×x*]\\s*\\d+\\s*mm.*$",
-      "^\\s*(北京|上海|广州|深圳|杭州|成都|武汉|南京|天津|西安).*(出版|书局|书店|文化|传媒|印刷).*$",
-      "^\\s*(图书在版编目|CIP数据核字).*$",
-      "^\\s*printed\\s+in\\s+.*$"
-    ].join("|"),
-    "i"
-  );
-
-  const tocLineRe = new RegExp(
-    [
-      "^\\s*(目录|目\\s*录|contents)\\s*$",
-      "^\\s*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*(章|回|节|卷|篇|部).*$",
-      "^\\s*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*(章|回)\\s*$",
-      "^\\s*(Chapter|CHAPTER)\\s*\\d+\\b.*$",
-      "^\\s*\\d+\\s*[\\.、]\\s*.+$",
-      "^\\s*(楔子|序章|终章|后记|番外|引子)\\s*$"
-    ].join("|"),
-    "i"
-  );
-
-  let cleanedHead = [];
-  let removedMetaCount = 0;
-  for (let i = 0; i < head.length; i++) {
-    const line = head[i].trim();
-    if (!line) {
-      cleanedHead.push("");
-      continue;
-    }
-    if (metaLineRe.test(line)) { removedMetaCount++; continue; }
-    cleanedHead.push(head[i]);
-  }
-
-  const WINDOW = 30;
-  let cutStart = -1;
-  let cutEnd = -1;
-
-  const headLines = cleanedHead;
-  const SEARCH_LIMIT = Math.min(300, headLines.length);
-
-  // 找到最后一个目录标题作为起点（支持多目录的书）
-  for (let i = 0; i < SEARCH_LIMIT; i++) {
-    const t = (headLines[i] || "").trim();
-    if (/^(目录|目\s*录|contents)\s*$/i.test(t)) {
-      cutStart = i;  // 不break，继续找，取最后一个
-    }
-  }
-  // 如果cutStart是CONTENTS，往前看一行是否是"目录"
-  if (cutStart > 0) {
-    const prevLine = (headLines[cutStart - 1] || "").trim();
-    if (/^(目录|目\s*录)\s*$/i.test(prevLine)) {
-      cutStart = cutStart - 1;
-    }
-  }
-
-  if (cutStart === -1) {
-    const DENSE_LIMIT = Math.min(200, headLines.length);
-    for (let i = 0; i < DENSE_LIMIT; i++) {
-      const end = Math.min(i + WINDOW, headLines.length);
-      const slice = headLines.slice(i, end);
-
-      let hit = 0;
-      let nonEmpty = 0;
-
-      for (const s of slice) {
-        const line = (s || "").trim();
-        if (!line) continue;
-        nonEmpty++;
-        if (tocLineRe.test(line)) hit++;
-      }
-
-      if (nonEmpty >= 8 && hit >= 6 && hit / nonEmpty >= 0.6) {
-        cutStart = i;
-        break;
-      }
-    }
-  }
-
-  if (cutStart !== -1) {
-    // 从目录标题开始，跳过所有目录块（支持多个目录）
-    // 遇到非章节行时重置计数，连续3行非章节才认为是真正正文
-    let i = cutStart + 1;
-    let nonTocCount = 0;
-    let lastTocLine = cutStart;
-
-    for (; i < headLines.length; i++) {
-      const line = (headLines[i] || "").trim();
-      if (!line) { nonTocCount = 0; continue; }
-
-      if (tocLineRe.test(line) || /^(目录|目\s*录|contents)\s*$/i.test(line)) {
-        lastTocLine = i;
-        nonTocCount = 0;
-      } else {
-        nonTocCount++;
-        if (nonTocCount >= 3) {
-          cutEnd = i - 2;
-          break;
-        }
-      }
-    }
-
-    if (cutEnd === -1) cutEnd = lastTocLine + 1;
-
-    const kept = headLines.slice(0, cutStart).concat(headLines.slice(cutEnd));
-    cleanedHead = kept;
-  }
-
-  const merged = cleanedHead.concat(tail).join("\n");
-
-  // 换行合并：只合并行尾不是句号等标点的行（PDF行内断字），保留段落分隔
-  const joined = merged.replace(/([^。！？!?\n])\n([^\n])/g, "$1$2");
-
-  const result = joined.replace(/\n{3,}/g, "\n\n").trim();
-
-  const hasFrontMatterEvidence = cutStart !== -1 || removedMetaCount >= 2;
-  if (hasFrontMatterEvidence) {
-
-  // 兜底清理：如果开头还有版权/目录残留，找第一个真正的正文段落
-  const resultLines = result.split("\n");
-  const skipRe = /ISBN|©|版权|出版|印刷|CIP|书号|定价|\d{4}年|\d+mm|CONTENTS|责任编辑|策划|封面|发行|邮编|电话|社址/i;
-  let firstContent = -1;
-  for (let i = 0; i < Math.min(100, resultLines.length); i++) {
-    const l = resultLines[i].trim();
-    if (l.length > 30 && !skipRe.test(l)) {
-      const zhCount = (l.match(/[\u4e00-\u9fa5]/g) || []).length;
-      if (zhCount / l.length > 0.7) {
-        firstContent = i;
-        break;
-      }
-    }
-  }
-  // 只有当前面有大量非正文内容时才截断（超过5行才处理）
-  if (firstContent >= 1) {
-    return resultLines.slice(firstContent).join("\n").trim();
-  }
-
-  }
-
-  return result;
+// ── 前置内容：只在加载书籍文件时清洗，粘贴和 YouTube 不走这里 ──
+function hideFrontMatterBar() {
+  document.getElementById("frontMatterBar")?.setAttribute("hidden", "");
+  document.getElementById("frontMatterPreview")?.setAttribute("hidden", "");
+  const view = document.getElementById("frontMatterView");
+  if (view) view.textContent = "查看";
 }
+
+function showFrontMatterBar(removedChars) {
+  const count = document.getElementById("frontMatterCount");
+  if (count) count.textContent = String(removedChars);
+  const view = document.getElementById("frontMatterView");
+  if (view) view.textContent = "查看";
+  document.getElementById("frontMatterBar")?.removeAttribute("hidden");
+  document.getElementById("frontMatterPreview")?.setAttribute("hidden", "");
+}
+
+function compactChars(value) {
+  return String(value || "").replace(/\s/g, "").length;
+}
+
+async function rememberFrontMatter(record, cleanedText) {
+  currentFrontMatter = null;
+  chunksFromCleaned = false;
+  hideFrontMatterBar();
+  if (!record?.frontMatterRef || !cleanedText) return;
+  let fm = null;
+  try { fm = await loadTextRecord(record.frontMatterRef); } catch {}
+  if (!fm?.text) return;
+  currentFrontMatter = {
+    refId: record.frontMatterRef,
+    original: fm.text,
+    removed: fm.removed || "",
+    removedChars: fm.removedChars || Math.max(0, compactChars(fm.text) - compactChars(cleanedText)),
+    cleaned: cleanedText
+  };
+  chunksFromCleaned = true;
+  showFrontMatterBar(currentFrontMatter.removedChars);
+}
+
+async function acceptBookFile(rawText, source, extra = {}) {
+  let result;
+  try {
+    result = cleanBookText(rawText || "", {
+      source,
+      pages: extra.pages,
+      toc: extra.toc
+    });
+  } catch (error) {
+    console.log("clean book text error:", error);
+    result = { text: rawText || "", original: rawText || "", changed: false, removedChars: 0 };
+  }
+
+  textInput.value = result.text || "";
+  currentFrontMatter = null;
+  chunksFromCleaned = false;
+  hideFrontMatterBar();
+  if (!result.changed || !result.removedChars) return;
+
+  const refId = "fm:" + hashText(result.original);
+  currentFrontMatter = {
+    refId,
+    original: result.original,
+    removed: result.removed || "",
+    removedChars: result.removedChars,
+    cleaned: result.text
+  };
+  try {
+    await saveTextRecord(refId, {
+      text: result.original,
+      removed: result.removed || "",
+      removedChars: result.removedChars,
+      fileName: currentFileName || null
+    });
+  } catch (error) {
+    console.log("save front matter error:", error);
+  }
+  showFrontMatterBar(result.removedChars);
+}
+
+async function restoreFrontMatterText() {
+  if (!currentFrontMatter) return;
+  const original = currentFrontMatter.original;
+  const cleaned = currentFrontMatter.cleaned;
+  const refId = currentFrontMatter.refId;
+  const rebuild = chunks.length > 0 && (
+    chunksFromCleaned || sameBookText(currentBookText, cleaned)
+  );
+  textInput.value = original;
+  currentFrontMatter = null;
+  chunksFromCleaned = false;
+  hideFrontMatterBar();
+  deleteTextRecord(refId).catch(() => {});
+
+  if (!rebuild) {
+    setStatus("已恢复原文", "ok", { busy: false });
+    return;
+  }
+
+  interruptPlayback("已恢复原文，重新分段生成…");
+  chunks = buildReadingChunks(original);
+  currentIndex = 0;
+  maxReachedIndex = -1;
+  rewrittenChunks = [];
+  contextReady = [];
+
+  if (currentBookId && sameBookText(currentBookText, cleaned)) {
+    currentBookText = original;
+    const shelf = loadShelf();
+    const book = shelf.books.find(item => item.id === currentBookId);
+    if (book) {
+      book.textLength = original.length;
+      book.totalChunks = chunks.length;
+      book.currentIndex = 0;
+      book.maxReachedIndex = 0;
+      book.currentTime = 0;
+      book.updatedAt = Date.now();
+      saveShelf(shelf);
+    }
+    try {
+      await saveTextRecord(currentBookId, {
+        text: original,
+        chunks,
+        fileName: currentFileName || null
+      });
+      lastSavedTextSig = currentBookId + ":" + original.length + ":" + chunks.length;
+    } catch (error) {
+      console.log("saveTextRecord error:", error);
+    }
+  }
+
+  renderChunkNav();
+  saveSession();
+  if (!chunks.length) {
+    setStatus("已恢复原文", "ok", { busy: false });
+    return;
+  }
+
+  isAutoPlaying = true;
+  currentJobId += 1;
+  const jobId = currentJobId;
+  setStatus("已恢复原文，重新分段生成…", "info", {
+    busy: true,
+    loading: true,
+    step: 1,
+    total: chunks.length
+  });
+  try {
+    await playChunk(0, jobId);
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    console.error(error);
+    setStatus("恢复原文后生成失败 ❌", "bad", { busy: false });
+    isAutoPlaying = false;
+  }
+}
+
+document.getElementById("frontMatterView")?.addEventListener("click", () => {
+  const panel = document.getElementById("frontMatterPreview");
+  const body = document.getElementById("frontMatterPreviewBody");
+  const view = document.getElementById("frontMatterView");
+  if (!panel || !currentFrontMatter) return;
+  if (panel.hasAttribute("hidden")) {
+    if (body) body.textContent = currentFrontMatter.removed || "（没有可显示的片段）";
+    panel.removeAttribute("hidden");
+    if (view) view.textContent = "收起";
+  } else {
+    panel.setAttribute("hidden", "");
+    if (view) view.textContent = "查看";
+  }
+});
+
+document.getElementById("frontMatterRestore")?.addEventListener("click", () => {
+  restoreFrontMatterText().catch(error => {
+    console.error(error);
+    setStatus("恢复原文失败 ❌", "bad", { busy: false });
+  });
+});
 
 // 粗判文本是否需要"先翻译"（外语 或 文言文）——只看开头一小段，纯本地正则，不调用任何接口
 function textLikelyNeedsTranslation(text) {
@@ -943,13 +998,14 @@ fileInput?.addEventListener("change", async function () {
   const file = fileInput.files[0];
   if (!file) return;
 
+  noteUserInput();
   interruptPlayback("已切换文件，停止当前播放");
 
   if (file.name.endsWith(".txt")) {
     const reader = new FileReader();
-    reader.onload = function (e) {
-      textInput.value = e.target.result;
+    reader.onload = async function (e) {
       currentFileName = file.name.replace(/\.[^.]+$/, "");
+      await acceptBookFile(e.target.result || "", "txt");
       setStatus("TXT 已载入 ✅", "ok");
     };
     reader.readAsText(file);
@@ -973,8 +1029,8 @@ fileInput?.addEventListener("change", async function () {
         setStatus(data.error || "PDF 解析失败 ❌", "bad", { busy: false });
         return;
       }
-      textInput.value = data.text || "";
       currentFileName = file.name.replace(/\.[^.]+$/, "");
+      await acceptBookFile(data.text || "", "pdf", { pages: data.pages, toc: data.toc });
       setStatus("PDF 已载入 ✅", "ok", { busy: false });
     } catch (error) {
       console.error(error);
@@ -996,8 +1052,8 @@ fileInput?.addEventListener("change", async function () {
       });
 
       const data = await response.json();
-      textInput.value = data.text || "";
       currentFileName = file.name.replace(/\.[^.]+$/, "");
+      await acceptBookFile(data.text || "", "docx");
       setStatus("Word 已载入 ✅", "ok", { busy: false });
     } catch (error) {
       console.error(error);
@@ -1011,15 +1067,19 @@ fileInput?.addEventListener("change", async function () {
 
 // ── Generate ──────────────────────────────────────────────────
 generateBtn?.addEventListener("click", async function () {
+  noteUserInput();
   let text = textInput.value.trim();
   if (!text) {
     alert("请输入文字");
     return;
   }
 
-  // 识别 YouTube 链接，自动提取字幕
+  // 识别 YouTube 链接，自动提取字幕。字幕不是书籍文件，不清洗。
   const isYouTube = /youtube\.com\/(watch|live)|youtu\.be\//.test(text);
   if (isYouTube) {
+    currentFrontMatter = null;
+    chunksFromCleaned = false;
+    hideFrontMatterBar();
     setStatus("正在提取 YouTube 字幕...", "info", { busy: true });
     let ytData = null;
     let ytError = null;
@@ -1059,11 +1119,11 @@ generateBtn?.addEventListener("click", async function () {
     setStatus("字幕已提取，准备生成...", "info");
   }
 
-  // 分段前清理电子书开头目录/元信息
-  const cleaned = cleanBookTextForReading(text);
-  if (cleaned && cleaned.trim().length > 0) {
-    text = cleaned;
-    textInput.value = cleaned;
+  // 粘贴文本不清洗。书籍文件在载入时已经洗过；这里只在用户把文本改掉之后收起提示。
+  if (currentFrontMatter && !sameBookText(text, currentFrontMatter.cleaned) && !sameBookText(text, currentFrontMatter.original)) {
+    currentFrontMatter = null;
+    chunksFromCleaned = false;
+    hideFrontMatterBar();
   }
 
   // 1) 打断上一轮
@@ -1075,6 +1135,7 @@ generateBtn?.addEventListener("click", async function () {
 
   // 段长逐段放大（约 150 起，1.6 倍封顶，最长 2200），让播放盖住下一段生成。
   chunks = buildReadingChunks(text);
+  chunksFromCleaned = !!(currentFrontMatter && sameBookText(text, currentFrontMatter.cleaned));
 
   currentIndex    = 0;
   maxReachedIndex = -1;
@@ -1197,6 +1258,9 @@ audioPlayer?.addEventListener("ended", async function () {
 
 // ── Session restore ───────────────────────────────────────────
 window.addEventListener("load", async function () {
+  if (sessionRestoreStarted) return;
+  sessionRestoreStarted = true;
+  const epochAtStart = userInputEpoch;
 
   // v1（localStorage 存全文）→ v2（全文在 IndexedDB）一次性迁移
   await migrateV1IfNeeded();
@@ -1205,7 +1269,8 @@ window.addEventListener("load", async function () {
   // （DOMContentLoaded+800ms 触发 click，实测 load 晚 ~850ms 才到）。
   // 此时 session 是引导刚写的，若继续恢复会把「播放中」状态错误覆盖成
   // 「已恢复上次进度」，并把 isAutoPlaying 重置为 false 破坏自动连播。
-  if (currentJobId > 0) return;
+  // 上传文件同样会改掉文本框，迟到的恢复不能把刚载入的书盖掉。
+  if (currentJobId > 0 || epochAtStart !== userInputEpoch) return;
 
   const session = loadSession();
   if (!session) return;
@@ -1221,16 +1286,19 @@ window.addEventListener("load", async function () {
       restoreTime = session.currentTime;
     }
 
-    // 全文从 IndexedDB 取回
+    // 全文从 IndexedDB 取回。已存的书保持原样，不按新的清洗规则重切。
     let restoredText   = "";
     let restoredChunks = [];
+    let restoredRecord = null;
     if (session.refId) {
       const rec = await loadTextRecord(session.refId);
+      restoredRecord = rec;
       if (rec) {
         restoredText   = rec.text || "";
         restoredChunks = Array.isArray(rec.chunks) ? rec.chunks : [];
       }
     }
+    if (currentJobId > 0 || epochAtStart !== userInputEpoch) return;
     textInput.value = restoredText;
     // 有保存的分段就沿用。没有分段时按旧算法重建，避免新规则把旧的段索引错位。
     let rebuiltChunks = false;
@@ -1241,12 +1309,14 @@ window.addEventListener("load", async function () {
     chunks = restoredChunks;
     contextReady = [];
     if (rebuiltChunks && session.refId) {
-      saveTextRecord(session.refId, {
-        text: restoredText,
-        chunks: restoredChunks,
-        fileName: null
-      }).catch(e => console.log("saveTextRecord error:", e));
+      saveTextRecord(session.refId, textRecord(
+        restoredText,
+        restoredChunks,
+        null,
+        restoredRecord?.frontMatterRef
+      )).catch(e => console.log("saveTextRecord error:", e));
     }
+    await rememberFrontMatter(restoredRecord, restoredText);
     lastSavedTextSig = restoredText
       ? session.refId + ":" + restoredText.length + ":" + restoredChunks.length
       : null;
