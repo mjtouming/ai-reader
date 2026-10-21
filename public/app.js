@@ -1,7 +1,7 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261021-2';
+import { generateAudioFromText } from './audioEngine.js?v=20261021-3';
 import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261021-1';
-import { cleanBookText } from './bookCleaner.mjs?v=20261021-2';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261021-3';
+import { cleanBookText } from './bookCleaner.mjs?v=20261021-3';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -847,6 +847,17 @@ async function runChunkRequest(index, jobId, epoch, token, opts) {
     const signal = preGenerateAbort.signal;
     if (signal.aborted || epoch !== playbackEpoch) throw abortError();
 
+    // 响应头里的改写稿一到就放行下一段。不能等 MP3 下完：慢链路上正文时间和成片差不多，
+    // 等下完再预取，播放永远追不上。
+    const notifyContext = (rewritten) => {
+      if (jobId !== currentJobId || epoch !== playbackEpoch) return;
+      if (rewritten && !rewrittenChunks[index]) rewrittenChunks[index] = rewritten;
+      if (contextReady[index]) return;
+      contextReady[index] = true;
+      // 前台这段要等 play() 成功后再预生成，避免和首次起播抢 Safari 的自动播放许可。
+      if (!foreground) fillWindow(currentIndex, jobId);
+    };
+
     const result = await generateAudioFromText(
       textToSend,
       mode,
@@ -855,7 +866,8 @@ async function runChunkRequest(index, jobId, epoch, token, opts) {
       previous,
       index + 1,
       chunks.length,
-      skipRewrite
+      skipRewrite,
+      notifyContext
     );
 
     if (jobId !== currentJobId || epoch !== playbackEpoch || signal.aborted) {

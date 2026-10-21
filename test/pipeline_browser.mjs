@@ -87,14 +87,47 @@ function delay(ms, signal) {
 
 const serverLog = [];
 let holdNew = false;
+let slowAudio = false;
 let seq = 0;
 const held = new Map();
+const audioFiles = new Map();
 
 function releaseHeld(id) {
   const item = held.get(id);
   if (!item) return;
   held.delete(id);
   item.release();
+}
+
+// 把成片按接近播放速度吐出，模拟 160kbps 音频走一条差不多同样快的链路。
+// 略快于实时（调用方传入约 0.85 倍成片时长），避免播放头追上缓冲。
+async function writeThrottled(req, res, buffer, durationMs) {
+  res.writeHead(200, {
+    "Content-Type": "audio/wav",
+    "Content-Length": buffer.length,
+    "Cache-Control": "no-store",
+    "Accept-Ranges": "none"
+  });
+  if (!buffer.length) {
+    res.end();
+    return;
+  }
+  const slices = 20;
+  const first = Math.min(buffer.length, Math.max(256, Math.ceil(buffer.length / slices)));
+  res.write(buffer.subarray(0, first));
+  let offset = first;
+  const rest = Math.max(1, slices - 1);
+  const stepMs = Math.max(5, Math.round(durationMs / rest));
+  const sliceLen = Math.max(1, Math.ceil((buffer.length - offset) / rest));
+  while (offset < buffer.length) {
+    if (req.destroyed || res.writableEnded) return;
+    await delay(stepMs);
+    if (req.destroyed || res.writableEnded) return;
+    const end = Math.min(buffer.length, offset + sliceLen);
+    res.write(buffer.subarray(offset, end));
+    offset = end;
+  }
+  if (!res.writableEnded) res.end();
 }
 
 const server = http.createServer(async (req, res) => {
@@ -126,6 +159,24 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/__test/log") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(serverLog));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/__test/slow") {
+      const body = await readBody(req);
+      slowAudio = !!body.slow;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ slowAudio }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/tts-audio/")) {
+      const id = decodeURIComponent(url.pathname.slice("/tts-audio/".length));
+      const item = audioFiles.get(id);
+      if (!item) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      await writeThrottled(req, res, item.audio, item.downloadMs);
       return;
     }
 
@@ -183,16 +234,35 @@ const server = http.createServer(async (req, res) => {
 
       const rewritten = `〖改${chunkIndex}〗` + text.slice(0, 60);
       const audio = wavBuffer(playSec);
+      const audioId = id.toString(16).padStart(40, "0");
       serverLog.push({
         kind: "end", id, t: Date.now(), chunkIndex, voice, mode,
-        textLen: text.length, textHead, rewritten: rewritten.slice(0, 24), genMs
+        textLen: text.length, textHead, rewritten: rewritten.slice(0, 24), genMs,
+        slow: slowAudio
       });
+      if (slowAudio) {
+        // 合成结束就返回改写稿和地址。MP3 另走 GET，并按接近实时的速度下。
+        audioFiles.set(audioId, {
+          audio,
+          downloadMs: Math.max(30, Math.round(playSec * 1000 * 0.85))
+        });
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Length": "0",
+          "X-Rewritten-Text": encodeURIComponent(rewritten),
+          "X-Audio-Url": `/tts-audio/${audioId}`,
+          "Cache-Control": "no-store"
+        });
+        res.end();
+        return;
+      }
       res.writeHead(200, {
         "Content-Type": "audio/wav",
         "Content-Length": audio.length,
         "X-Rewritten-Text": encodeURIComponent(rewritten),
         "Cache-Control": "no-store"
       });
+      // 快路径仍把整段放在 POST 正文里。不带 X-Audio-Url，客户端读完 blob 再播。
       res.end(audio);
       return;
     }
@@ -299,6 +369,19 @@ await page.evaluateOnNewDocument(() => {
         rewrittenHead: rewritten ? rewritten.slice(0, 24) : null,
         ...base
       });
+      const audioUrl = res.headers.get("X-Audio-Url");
+      if (audioUrl) {
+        const meta = {
+          voice: base.voice,
+          mode: base.mode,
+          chunkIndex: base.chunkIndex,
+          textHead: base.textHead,
+          textLen: base.textLen,
+          previousHead: base.previous ? String(base.previous).slice(0, 24) : null
+        };
+        try { window.__urlMeta.set(new URL(audioUrl, location.origin).href, meta); } catch {}
+        window.__urlMeta.set(audioUrl, meta);
+      }
       const origBlob = res.blob.bind(res);
       res.blob = async () => {
         const blob = await origBlob();
@@ -623,6 +706,15 @@ if (report.main && !report.crosstalk) {
   }
 }
 
+if (!report.slow) {
+  try {
+    report.slow = await runSlow();
+  } catch (e) {
+    report.errors.push("slow: " + (e.stack || e.message || e));
+    console.error(e);
+  }
+}
+
 report.pageErrors = pageErrors.slice(0, 12);
 report.serverAborts = serverLog.filter(e => e.kind === "abort").map(e => ({
   id: e.id, chunkIndex: e.chunkIndex, voice: e.voice, textHead: e.textHead, reason: e.reason
@@ -647,6 +739,21 @@ if (report.crosstalk?.book) {
   checks.bookNoCrosstalk = report.crosstalk.book.playedBookB === false
     && !(report.crosstalk.book.plays[0]?.textHead || "").includes("城南旧事");
 }
+if (report.slow) {
+  const gaps = report.slow.gaps || [];
+  const ready = report.slow.readyBeforeEnd || [];
+  const lens = report.slow.lens || [];
+  checks.slowNoWaits = gaps.length >= 4 && gaps.every(g => g.gapMs < 500);
+  // 下一段的合成在本段播完前已经结束（地址就绪），所以段间不用再等生成。
+  checks.slowPrefetch = ready.length >= 4
+    && ready.every(r => r.nextStartedBeforeEnd && r.nextReadyBeforeEnd);
+  // 窗口要走到播放前面：至少有两段在开播前，再下一段的请求已经发出。
+  checks.slowAhead = ready.filter(r => r.nextStartedBeforePlay).length >= 2;
+  checks.slowGrew = lens.length >= 4
+    && lens[1] > lens[0] * 1.4
+    && lens[3] > lens[0] * 1.5
+    && lens[2] > lens[1];
+}
 report.checks = checks;
 
 fs.mkdirSync(path.join(HERE, "results"), { recursive: true });
@@ -658,6 +765,103 @@ console.log("errors", report.errors.length);
 
 await browser.close();
 server.close();
+
+function tocFrontBook() {
+  // 没有句读的目录行，大约 90 字一段。旧的段长会按实际字数越缩越短。
+  const titles = ["佟家的奴才", "内务府的人", "南怀仁", "红票", "京城的雪", "孝庄", "议政", "西征", "漕运", "八旗"];
+  const lines = [];
+  for (let i = 0; i < 16; i++) {
+    const n = String(i + 3).padStart(3, "0");
+    const title = titles[i % titles.length];
+    if (i === 4) {
+      lines.push("战场上的俘虏·康熙母亲的娘家·孝庄的决定·消除奴籍");
+    }
+    lines.push("目录".repeat(40) + `${title}／${n}`);
+  }
+  lines.push("加小编QQ一起读书，海量资源每日更新");
+  for (let n = 0; n < 80; n++) {
+    lines.push(`第${n + 1}句：天色渐渐暗了下来，街上的灯一盏盏亮起。`);
+  }
+  return lines.join("\n\n");
+}
+
+function analyzeSlow(trace) {
+  const mark = [...trace].reverse().find(e => e.kind === "mark" && e.name === "slow");
+  const t0 = mark ? mark.t : 0;
+  const scoped = trace.filter(e => e.t >= t0);
+  const plays = scoped.filter(e => e.kind === "play" && e.meta?.chunkIndex);
+  const endeds = scoped.filter(e => e.kind === "ended" && e.meta?.chunkIndex);
+  const starts = scoped.filter(e => e.kind === "req-start");
+  const ends = scoped.filter(e => e.kind === "req-end");
+  const gaps = [];
+  for (let i = 0; i < plays.length - 1; i++) {
+    const ended = endeds.find(e => e.meta.chunkIndex === plays[i].meta.chunkIndex && e.t >= plays[i].t);
+    if (!ended) continue;
+    gaps.push({
+      between: `${plays[i].meta.chunkIndex}→${plays[i + 1].meta.chunkIndex}`,
+      gapMs: Math.round(plays[i + 1].t - ended.t)
+    });
+  }
+  const readyBeforeEnd = [];
+  for (let i = 0; i < plays.length - 1; i++) {
+    const cur = plays[i].meta.chunkIndex;
+    const ended = endeds.find(e => e.meta.chunkIndex === cur && e.t >= plays[i].t);
+    const nextStart = starts.find(e => e.chunkIndex === cur + 1);
+    const nextEnd = ends.find(e => e.chunkIndex === cur + 1);
+    readyBeforeEnd.push({
+      chunk: cur,
+      nextStartedBeforeEnd: !!(nextStart && ended && nextStart.t < ended.t),
+      nextReadyBeforeEnd: !!(nextEnd && ended && nextEnd.t <= ended.t + 80),
+      nextStartedBeforePlay: !!(nextStart && nextStart.t < plays[i].t)
+    });
+  }
+  return {
+    lens: plays.slice(0, 6).map(p => p.meta.textLen),
+    gaps,
+    readyBeforeEnd,
+    plays: plays.length
+  };
+}
+
+async function runSlow() {
+  await fetch(`${origin}/__test/hold`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hold: false })
+  });
+  await fetch(`${origin}/__test/release`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  await fetch(`${origin}/__test/slow`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slow: true })
+  });
+  await page.evaluate(() => {
+    window.__trace.push({ kind: "mark", name: "slow", t: performance.now() });
+  });
+  const text = tocFrontBook();
+  await page.evaluate((value) => {
+    document.getElementById("textInput").value = value;
+    document.getElementById("modeSelect").value = "original";
+    document.getElementById("voiceSelect").value = "young_female";
+    document.getElementById("speedSelect").value = "1";
+  }, text);
+  console.log("slow-link generate, toc book");
+  await page.click("#generateBtn");
+  const trace = await waitFor(
+    (tr) => {
+      const mark = [...tr].reverse().find(e => e.kind === "mark" && e.name === "slow");
+      if (!mark) return false;
+      return tr.filter(e => e.kind === "play" && e.t >= mark.t && e.meta?.chunkIndex).length >= 5;
+    },
+    240000,
+    "slow 5 plays"
+  );
+  const slow = analyzeSlow(trace);
+  console.log("slow lens", slow.lens.join(", "));
+  console.log("slow gaps", slow.gaps.map(g => g.gapMs).join(", "));
+  console.log("slow ready", JSON.stringify(slow.readyBeforeEnd));
+  return slow;
+}
 
 if (ASSERT) {
   const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);

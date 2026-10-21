@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import {
   CHUNK_ABS_MAX,
   CHUNK_GROWTH,
+  CHUNK_LADDER,
   buildReadingChunks,
+  maxCharsForChunk,
   resolvePlaybackChunks,
   savedChunksUsable,
   splitLegacyBook
@@ -79,6 +81,24 @@ assert.equal(savedChunksUsable([]), false);
 assert.equal(savedChunksUsable(null), false);
 const rebuilt = resolvePlaybackChunks(text, null);
 assert.deepEqual(rebuilt, legacy);
+
+// 上一段没填满阶梯时，下一段仍按阶梯走，不跟着实际字数缩。
+assert.equal(maxCharsForChunk(1, 53), CHUNK_LADDER[1]);
+assert.equal(maxCharsForChunk(3, 70), CHUNK_LADDER[3]);
+assert.equal(maxCharsForChunk(1, 140), Math.min(CHUNK_LADDER[1], Math.floor(140 * CHUNK_GROWTH)));
+assert.equal(maxCharsForChunk(1, 500), Math.min(CHUNK_ABS_MAX, Math.floor(500 * CHUNK_GROWTH)));
+
+// 没有句读的短开场（目录行粘在一起）不能把后面的段长冻在一百字附近。
+const shortUnits = Array.from({ length: 24 }, (_, i) => "目".repeat(86) + `条${String(i).padStart(2, "0")}`);
+const shortText = shortUnits.join("\n\n");
+const shortChunks = buildReadingChunks(shortText);
+const shortLens = shortChunks.slice(0, 5).map(c => c.length);
+assert.ok(shortChunks[0].length < 160, `short opening first chunk ${shortChunks[0].length}`);
+assert.ok(shortChunks[1].length > shortChunks[0].length * 1.5,
+  `second chunk collapsed: ${shortLens.join(", ")}`);
+assert.ok(shortChunks[2].length > shortChunks[1].length, `third chunk did not grow: ${shortLens.join(", ")}`);
+assert.ok(shortChunks[3].length > 300, `fourth chunk still tiny: ${shortLens.join(", ")}`);
+console.log("short opening lengths:", shortLens.join(", "));
 
 const legacyLens = legacy.slice(0, 6).map(c => c.length);
 const newLens = chunks.slice(0, 8).map(c => c.length);

@@ -51,26 +51,79 @@ function isTocHeading(line) {
   return TOC_HEADING.test(String(line || "").trim());
 }
 
-function trailingPageNumber(line) {
-  const m = String(line || "").trim().match(/\s(\d{1,4})$/);
-  if (!m) return false;
-  if (m[1].length === 4 && /^(19|20)/.test(m[1])) return false;
+function normalizeDigits(s) {
+  return String(s || "").replace(/[\uFF10-\uFF19]/g, ch =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xFF10 + 0x30)
+  );
+}
+
+function pageTokenOk(raw) {
+  const n = normalizeDigits(raw);
+  if (!/^\d{1,4}$/.test(n)) return false;
+  // 行尾四位年份不是页码。前导零（／003）要保留。
+  if (n.length === 4 && /^(19|20)/.test(n)) return false;
   return true;
+}
+
+// 页码可以是「标题 12」，也可以是「标题／003」「标题/12」「标题 | 086」「标题｜018」。
+function trailingPageNumber(line) {
+  const t = String(line || "").trim();
+  let m = t.match(/\s([0-9\uFF10-\uFF19]{1,4})$/);
+  if (m && pageTokenOk(m[1])) return true;
+  m = t.match(/[\/\uFF0F|\uFF5C｜]\s*([0-9\uFF10-\uFF19]{1,4})\s*$/);
+  if (m && pageTokenOk(m[1])) return true;
+  return false;
+}
+
+function hasPageSeparator(line) {
+  return /[\/\uFF0F|\uFF5C｜]\s*[0-9\uFF10-\uFF19]{1,4}\s*$/.test(String(line || "").trim());
 }
 
 function isTocEntry(line) {
   const t = String(line || "").trim();
   if (!t || t.length > 80 || isTocHeading(t)) return false;
-  if (LEADER.test(t) && /\d{1,4}\s*$/.test(t)) {
-    const title = t.replace(LEADER, " ").replace(/\d{1,4}\s*$/, "").trim();
+  // 带句号的句子不是目录行。拿不准就留下。
+  if (/[。！？!?]/.test(t)) return false;
+  if (LEADER.test(t) && /[0-9\uFF10-\uFF19]{1,4}\s*$/.test(t)) {
+    const title = t.replace(LEADER, " ").replace(/[0-9\uFF10-\uFF19]{1,4}\s*$/, "").trim();
     if (title.length >= 1 && title.length <= 40) return true;
   }
-  if (!trailingPageNumber(t) || t.length > 40) return false;
+  if (!trailingPageNumber(t)) return false;
+  const title = t
+    .replace(/[\/\uFF0F|\uFF5C｜]\s*[0-9\uFF10-\uFF19]{1,4}\s*$/, "")
+    .replace(/\s+[0-9\uFF10-\uFF19]{1,4}\s*$/, "")
+    .trim();
+  if (!title || title.length > 40) return false;
   if (/^第[0-9零一二三四五六七八九十百千万]+\s*[章节回部篇卷]/.test(t)) return true;
   if (/^(chapter|part)\s+[0-9ivxlcdm]+\b/i.test(t)) return true;
   if (/^[一二三四五六七八九十百千]+\s*[、.．]/.test(t)) return true;
+  if (/^[一二三四五六七八九十百千]+章/.test(t)) return true;
   if (/^\d{1,2}\s*[.、．]\s*\S/.test(t)) return true;
+  if (/^[图表]\s*[0-9]+(?:[.．][0-9]+)*/.test(t)) return true;
+  // 「佟家的奴才／003」这种斜杠页码，标题像书名即可，不必再套章节格式。
+  if (hasPageSeparator(t) && /[\u4e00-\u9fff]/.test(title)) return true;
   return false;
+}
+
+// 目录里用间隔号串起来的小节名，本身没有页码，但会把前后的目录行拆成两段。
+function isTocSubsectionLine(line) {
+  const t = String(line || "").trim();
+  if (!t || t.length < 8 || t.length > 400) return false;
+  if (/[。！？!?]/.test(t)) return false;
+  const parts = t.split(/[·・•∙⋅‧]/).map(s => s.trim()).filter(s => s && !/^[\s.．…\u2026]+$/.test(s));
+  if (parts.length < 3) return false;
+  return parts.every(p => p.length <= 24);
+}
+
+// 只认行首就是引流口吻、又点明读书资源的广告。正文里随口提到 QQ 的句子不碰。
+function isReadingAdLine(line) {
+  const t = String(line || "").trim();
+  if (!t || t.length > 80) return false;
+  if (/[“"「]/.test(t)) return false;
+  if (!/^(加|关注|扫码|进群)/.test(t)) return false;
+  if (!/(QQ|qq|微信|公众号|小编)/.test(t)) return false;
+  if (!/(读书|阅读|听书|资源|免费)/.test(t)) return false;
+  return true;
 }
 
 function findCopyrightSpans(lines) {
@@ -160,6 +213,13 @@ function findTocSpans(lines) {
         j++;
         continue;
       }
+      // 间隔号小节、夹在目录中间的引流句，不能把一次目录扫描切断。
+      if (count >= 1 && (isTocSubsectionLine(raw) || isReadingAdLine(raw))) {
+        last = j;
+        weak = 0;
+        j++;
+        continue;
+      }
       if (raw.length <= 24 && !/[。！？!?]/.test(raw)) {
         weak++;
         if (weak > 2) break;
@@ -194,6 +254,37 @@ function findTocSpans(lines) {
   return spans;
 }
 
+function findAdSpans(lines) {
+  const limit = Math.min(lines.length, 480);
+  const spans = [];
+  let i = 0;
+  while (i < limit) {
+    if (!isReadingAdLine(lines[i])) {
+      i++;
+      continue;
+    }
+    if (substantialProseBefore(lines, i)) break;
+    let last = i;
+    let j = i + 1;
+    while (j < limit && j < i + 6) {
+      const raw = lines[j].trim();
+      if (!raw) {
+        j++;
+        continue;
+      }
+      if (isReadingAdLine(raw)) {
+        last = j;
+        j++;
+        continue;
+      }
+      break;
+    }
+    spans.push([i, last]);
+    i = last + 1;
+  }
+  return spans;
+}
+
 function removeMarkedLines(lines, spans) {
   if (!spans.length) return null;
   const drop = new Set();
@@ -215,7 +306,7 @@ export function removeFrontMatterLines(text) {
   const original = String(text ?? "");
   const normalized = original.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.split("\n");
-  const spans = findCopyrightSpans(lines).concat(findTocSpans(lines));
+  const spans = findCopyrightSpans(lines).concat(findTocSpans(lines), findAdSpans(lines));
   const result = removeMarkedLines(lines, spans);
   if (!result) return { text: original, removed: "", changed: false };
   return { text: result.text, removed: result.removed, changed: true };
