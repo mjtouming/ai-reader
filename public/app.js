@@ -1,5 +1,6 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261016-2';
+import { generateAudioFromText } from './audioEngine.js?v=20261021-1';
 import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261021-1';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -18,34 +19,32 @@ const sleepTimer  = document.getElementById("sleepTimer");
 
 const VOICE_MANUAL_KEY = "ai_reader_voice_manual";
 
+// 模式联动改声线时会同步触发 voice change；这段时间不要重启两遍。
+let applyingLinkedVoice = false;
+
 voiceSelect.addEventListener("change", () => {
   localStorage.setItem(VOICE_MANUAL_KEY, voiceSelect.value);
-
-  // 如果已有内容且音频已启动，自动从当前段重新生成
-  if (chunks.length > 0 && audioPlayer && (audioPlayer.src || isAutoPlaying)) {
-    const resumeIndex = currentIndex;
-    interruptPlayback("");
-    setStatus(`切换声线，重新生成第 ${resumeIndex + 1} 段…`, "info", { busy: true, loading: true });
-    isAutoPlaying = true;
-    currentJobId += 1;
-    const jobId = currentJobId;
-    playChunk(resumeIndex, jobId).catch(e => {
-      if (e?.name !== "AbortError") {
-        setStatus("切换声线失败 ❌", "bad", { busy: false });
-        isAutoPlaying = false;
-      }
-    });
-  }
+  if (applyingLinkedVoice) return;
+  // 声线变了但改写稿仍可用，只重新合成，不丢掉上文。
+  restartPlaybackIfActive("切换声线，重新生成第");
 });
 
 modeSelect.addEventListener("change", () => {
   const manualVoice = localStorage.getItem(VOICE_MANUAL_KEY);
-  if (manualVoice) {
-    voiceSelect.value = manualVoice;
-  } else {
-    if (modeSelect.value === "original") voiceSelect.value = "young_female";
-    if (modeSelect.value === "story")    voiceSelect.value = "elder_male";
+  applyingLinkedVoice = true;
+  try {
+    if (manualVoice) {
+      if (voiceSelect.value !== manualVoice) voiceSelect.value = manualVoice;
+    } else if (modeSelect.value === "story") {
+      if (voiceSelect.value !== "elder_male") voiceSelect.value = "elder_male";
+    } else if (voiceSelect.value !== "young_female") {
+      voiceSelect.value = "young_female";
+    }
+  } finally {
+    applyingLinkedVoice = false;
   }
+  // 模式变了，旧改写稿不能再当 previous。
+  restartPlaybackIfActive("切换模式，重新生成第", { clearRewrites: true });
 });
 
 // ── State ─────────────────────────────────────────────────────
@@ -62,10 +61,12 @@ let currentJobId     = 0;
 let currentAudioUrl  = null;
 let currentFileName  = null;
 let activeGenIndex   = -1;  // 正在等待生成的段（B2 阶段推送过滤用）
-let audioCache       = {};   // index → url
-let preGeneratingSet = new Set();
+let audioCache       = {};   // index → url（只放已经生成好、还没拿去播的）
+let inflight         = new Map(); // index → { token, jobId, promise, epoch } 同一段只有一个在途请求
+let contextReady     = [];   // 该段改写上下文已落地，下一段才允许带 previous 出发
+let playbackEpoch    = 0;    // interrupt 时递增，迟到的响应不能写进新一轮
 let preGenerateAbort = new AbortController();
-const PRE_WINDOW     = 2;    // 预生成窗口大小
+const PRE_WINDOW     = 4;    // 向前预生成的段数（仍按顺序，不并发抢上文）
 let lastSessionSave  = 0;
 let lastSavedTextSig = null;   // 已写入 IndexedDB 的全文指纹，避免每 2 秒重复全量写
 let storageWarnShown = false;  // 存储写入失败只提示一次
@@ -251,18 +252,19 @@ async function loadBook(book) {
   voiceSelect.value = book.voice || "young_female";
   speedSelect.value = book.speed || "1";
 
-  // Re-split with same algorithm as generateBtn
-  const warmupParts0 = splitTextIntoChunks(text, { maxLen: 300, minLen: 150 });
-  if (warmupParts0.length > 3) {
-    const warmup   = warmupParts0.splice(0, 3);
-    const restText = warmupParts0.join("\n\n");
-    const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
-    chunks = [...warmup, ...restParts];
-  } else {
-    chunks = warmupParts0;
+  // 已保存的分段原样沿用，旧的 currentIndex 仍然指向同一段。
+  // 没有分段（v1 迁移来的书）才用旧算法重建，不用新的渐进规则重切。
+  const savedChunks = Array.isArray(rec?.chunks) ? rec.chunks : null;
+  const reused = savedChunksUsable(savedChunks);
+  chunks = resolvePlaybackChunks(text, reused ? savedChunks : null);
+  if (!reused && chunks.length) {
+    saveTextRecord(book.id, { text, chunks, fileName: currentFileName }).catch(e => {
+      console.log("saveTextRecord error:", e);
+    });
   }
 
   rewrittenChunks = [];
+  contextReady    = [];
   currentIndex    = Math.min(book.currentIndex || 0, Math.max(0, chunks.length - 1));
   maxReachedIndex = book.maxReachedIndex ?? currentIndex;
   restoreTime     = book.currentTime || 0;
@@ -364,6 +366,7 @@ function clearForNewBook() {
   textInput.value = "";
   chunks          = [];
   rewrittenChunks = [];
+  contextReady    = [];
   currentIndex    = 0;
   maxReachedIndex = -1;
   currentBookId   = null;
@@ -412,7 +415,8 @@ async function jumpToChunk(index) {
     await playChunk(currentIndex, jobId);
   } catch (e) {
     if (e?.name === "AbortError") {
-      isAutoPlaying = false;
+      // 跳转途中又被换声线/换书打断时，不能把新任务的连播标志清掉。
+      if (jobId === currentJobId) isAutoPlaying = false;
       return;
     }
     setStatus("跳转失败 ❌", "bad", { busy: false });
@@ -485,82 +489,7 @@ function setStatus(text, type = "info", opts = {}) {
 }
 
 // ── Text processing ───────────────────────────────────────────
-function splitTextIntoChunks(text, opts = {}) {
-  const { maxLen = 2200, minLen = 800 } = opts;
-
-  const cleaned = (text || "")
-    .replace(/\r/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-
-  if (!cleaned) return [];
-
-  if (cleaned.length <= maxLen) return [cleaned];
-
-  const paragraphs = cleaned.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-
-  const chunks = [];
-  let buf = "";
-
-  const pushBuf = () => {
-    const t = buf.trim();
-    if (t) chunks.push(t);
-    buf = "";
-  };
-
-  for (const p of paragraphs) {
-    if (p.length > maxLen) {
-      pushBuf();
-
-      const sentences = p
-        .split(/(?<=[。！？!?；;。\.])\s*/)
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      let sbuf = "";
-      for (const s of sentences) {
-        if ((sbuf + " " + s).trim().length <= maxLen) {
-          sbuf = (sbuf ? sbuf + " " : "") + s;
-        } else {
-          if (sbuf) chunks.push(sbuf.trim());
-          if (s.length > maxLen) {
-            for (let i = 0; i < s.length; i += maxLen) {
-              const cut = s.slice(i, i + maxLen).trim();
-              if (cut) chunks.push(cut);
-            }
-            sbuf = "";
-          } else {
-            sbuf = s;
-          }
-        }
-      }
-      if (sbuf) chunks.push(sbuf.trim());
-      continue;
-    }
-
-    const candidate = buf ? (buf + "\n\n" + p) : p;
-    if (candidate.length <= maxLen) {
-      buf = candidate;
-    } else {
-      pushBuf();
-      buf = p;
-    }
-  }
-  pushBuf();
-
-  for (let i = chunks.length - 1; i > 0; i--) {
-    if (chunks[i].length < minLen) {
-      const merged = chunks[i - 1] + "\n\n" + chunks[i];
-      if (merged.length <= maxLen) {
-        chunks[i - 1] = merged;
-        chunks.splice(i, 1);
-      }
-    }
-  }
-
-  return chunks;
-}
-
+// 分段在 readingChunks.mjs（渐进段长 + 旧分段兼容）。这里只留文档清洗。
 function cleanBookTextForReading(rawText) {
   const text = (rawText || "").replace(/\r/g, "").trim();
   if (!text) return "";
@@ -757,24 +686,50 @@ window.addEventListener("tts-stage", (e) => {
 });
 
 // ── Playback core ─────────────────────────────────────────────
+function abortError() {
+  return new DOMException("Aborted", "AbortError");
+}
+
+function restartPlaybackIfActive(statusLabel, opts = {}) {
+  if (!(chunks.length > 0 && audioPlayer && (audioPlayer.src || isAutoPlaying))) return;
+  const resumeIndex = currentIndex;
+  if (opts.clearRewrites) {
+    rewrittenChunks = [];
+    contextReady = [];
+  }
+  interruptPlayback("");
+  setStatus(`${statusLabel} ${resumeIndex + 1} 段…`, "info", { busy: true, loading: true });
+  isAutoPlaying = true;
+  currentJobId += 1;
+  const jobId = currentJobId;
+  playChunk(resumeIndex, jobId).catch(e => {
+    if (e?.name !== "AbortError") {
+      const fail = statusLabel.startsWith("切换声线") ? "切换声线失败 ❌" : "切换后重新生成失败 ❌";
+      setStatus(fail, "bad", { busy: false });
+      isAutoPlaying = false;
+    }
+  });
+}
+
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
   restoreTime  = 0;   // 恢复进度只在"继续播放"路径生效，任何打断/跳段/换书都不得带入旧秒数
+  playbackEpoch += 1;
+  activeGenIndex = -1;
 
   if (currentAbort) {
     try { currentAbort.abort(); } catch {}
     currentAbort = null;
   }
 
-  // 取消所有预生成请求
+  // 取消所有预生成请求。epoch 让已经返回、但还没写入缓存的响应也作废。
   preGenerateAbort.abort();
   preGenerateAbort = new AbortController();
-  // 清空预生成缓存
   for (const url of Object.values(audioCache)) {
     try { URL.revokeObjectURL(url); } catch {}
   }
   audioCache = {};
-  preGeneratingSet.clear();
+  inflight.clear();
 
   if (audioPlayer) {
     audioPlayer.pause();
@@ -791,50 +746,116 @@ function interruptPlayback(reason = "") {
   if (reason) setStatus(reason, "info", { busy: false });
 }
 
-async function playChunk(index, jobId) {
-  const mode  = modeSelect?.value  || "original";
-  const total = chunks.length;
-  const voice = voiceSelect?.value || "young_female";
+// 同一段只发一个 /tts。播放方若发现该段已在预生成，就等它，不再另起一条（另起会重新计费，等待也从头算）。
+function ensureChunkAudio(index, jobId, opts = {}) {
+  if (jobId !== currentJobId) return Promise.reject(abortError());
+  const cached = audioCache[index];
+  if (cached) {
+    return Promise.resolve({ url: cached, rewritten: rewrittenChunks[index] || null });
+  }
+  const existing = inflight.get(index);
+  if (existing && existing.jobId === jobId) {
+    console.log("复用在途请求", index + 1);
+    return existing.promise;
+  }
 
-  setStatus(`正在生成第 ${index + 1}/${total} 段...`, "info", {
-    busy: true,
-    loading: true,
-    step: index + 1,
-    total
-  });
+  const token = {};
+  const epoch = playbackEpoch;
+  const promise = runChunkRequest(index, jobId, epoch, token, opts);
+  inflight.set(index, { token, jobId, promise, epoch });
+  return promise;
+}
 
-  const abort = new AbortController();
-  currentAbort = abort;
+async function runChunkRequest(index, jobId, epoch, token, opts) {
+  const foreground = !!opts.foreground;
+  let ok = false;
+  try {
+    // 上一段的改写稿还没回来时不能先发下一段，否则 story 的 previous 是空的。
+    if (index > 0 && !contextReady[index - 1]) {
+      const prev = inflight.get(index - 1);
+      if (prev && prev.jobId === jobId && prev.epoch === epoch) {
+        try { await prev.promise; } catch {}
+      }
+      if (jobId !== currentJobId || epoch !== playbackEpoch) throw abortError();
+    }
 
-  let audioUrl;
-
-  if (audioCache[index]) {
-    // 直接使用预生成缓存，不重新生成
-    audioUrl = audioCache[index];
-    delete audioCache[index];
-  } else {
-    // 已有改写文本 → skipRewrite=true 直接 TTS；没有 → 发原文让服务端改写
-    // 原文模式第一段为了起播快，默认可以跳过改写，但如果开头是外语/文言文（需要先翻译），
-    // 就不能跳过，否则会读出没翻译的原文
+    const mode = modeSelect?.value || "original";
+    const voice = voiceSelect?.value || "young_female";
     const alreadyRewritten = !!rewrittenChunks[index];
     const textToSend = rewrittenChunks[index] || chunks[index];
-    const isOriginalFirstChunk = index === 0 && (modeSelect?.value || 'original') === 'original';
+    // 原文模式第一段为了起播快可以跳过改写；开头是外语/文言文时不能跳，否则会读出没翻译的原文。
+    const isOriginalFirstChunk = index === 0 && mode === "original";
     const skipRewrite = alreadyRewritten ||
       (isOriginalFirstChunk && !textLikelyNeedsTranslation(textToSend));
+    const previous = index > 0 ? (rewrittenChunks[index - 1] || null) : null;
 
-    let result;
+    const signal = preGenerateAbort.signal;
+    if (signal.aborted || epoch !== playbackEpoch) throw abortError();
+
+    const result = await generateAudioFromText(
+      textToSend,
+      mode,
+      voice,
+      signal,
+      previous,
+      index + 1,
+      chunks.length,
+      skipRewrite
+    );
+
+    if (jobId !== currentJobId || epoch !== playbackEpoch || signal.aborted) {
+      try { if (result?.url) URL.revokeObjectURL(result.url); } catch {}
+      throw abortError();
+    }
+
+    if (result.rewritten && !rewrittenChunks[index]) {
+      rewrittenChunks[index] = result.rewritten;
+    }
+    contextReady[index] = true;
+    audioCache[index] = result.url;
+    ok = true;
+    return { url: result.url, rewritten: rewrittenChunks[index] || result.rewritten || null };
+  } finally {
+    const cur = inflight.get(index);
+    if (cur && cur.token === token) inflight.delete(index);
+    // 前台这段要等 play() 成功后再预生成，避免和首次起播抢 Safari 的自动播放许可。
+    if (ok && !foreground && jobId === currentJobId && epoch === playbackEpoch) {
+      fillWindow(currentIndex, jobId);
+    }
+  }
+}
+
+async function playChunk(index, jobId) {
+  if (jobId !== currentJobId) return;
+  const total = chunks.length;
+  if (index >= total) {
+    setStatus("全部播放完成 ✅", "ok", {
+      busy: false,
+      step: total,
+      total
+    });
+    isAutoPlaying = false;
+    return;
+  }
+
+  const epoch = playbackEpoch;
+  let audioUrl = audioCache[index] || null;
+
+  if (audioUrl) {
+    delete audioCache[index];
+  } else {
+    setStatus(`正在生成第 ${index + 1}/${total} 段...`, "info", {
+      busy: true,
+      loading: true,
+      step: index + 1,
+      total
+    });
+
+    currentAbort = preGenerateAbort;
     activeGenIndex = index;
+    let result;
     try {
-      result = await generateAudioFromText(
-        textToSend,
-        mode,
-        voice,
-        abort.signal,
-        rewrittenChunks[index - 1] || null,
-        index + 1,
-        chunks.length,
-        skipRewrite
-      );
+      result = await ensureChunkAudio(index, jobId, { foreground: true });
     } catch (e) {
       activeGenIndex = -1;
       if (e?.name === "AbortError") {
@@ -843,17 +864,16 @@ async function playChunk(index, jobId) {
       }
       throw e;
     }
-
-    audioUrl = result.url;
-    const rewrittenText = result.rewritten;
-    if (!rewrittenChunks[index] && rewrittenText) {
-      rewrittenChunks[index] = rewrittenText;
-    }
+    activeGenIndex = -1;
+    if (jobId !== currentJobId || epoch !== playbackEpoch) return;
+    audioUrl = result?.url || null;
+    if (audioUrl && audioCache[index] === audioUrl) delete audioCache[index];
   }
 
-  activeGenIndex = -1;
-  if (jobId !== currentJobId) return;
+  if (jobId !== currentJobId || epoch !== playbackEpoch) return;
   if (!audioUrl) throw new Error("audioUrl is null (TTS failed)");
+  // 缓存命中时没有改写稿，也要放行后面的预生成，避免窗口卡死。
+  if (!contextReady[index]) contextReady[index] = true;
 
   if (currentAudioUrl) {
     try { URL.revokeObjectURL(currentAudioUrl); } catch {}
@@ -888,75 +908,33 @@ async function playChunk(index, jobId) {
     await audioPlayer.play();
   } catch (e) {
     console.log("play() 被浏览器拒绝或异常:", e);
-    if (!audioPlayer.paused) {
-      console.log("实际已播放，忽略错误");
+    if (audioPlayer.paused) {
+      // Safari 自动播放被拦截，提示用户手动点击。此时不要抢着发下一段。
+      setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
+      isAutoPlaying = false;
       return;
     }
-    // Safari 自动播放被拦截，提示用户手动点击
-    setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
-    isAutoPlaying = false;
-    return;
+    console.log("实际已播放，忽略错误");
   }
 
+  if (jobId !== currentJobId || epoch !== playbackEpoch) return;
   fillWindow(index, jobId);
 }
 
-// 填满预生成窗口（串行：每次只启动一个，由 preGenerateNext 完成后继续触发）
+// 从正在播的段往后补窗口。已经在途的段用 break 而不是 continue：
+// 跳过它会并行发出下一段，story 的 previous 还没回来。
 function fillWindow(fromIndex, jobId) {
-  for (let i = fromIndex + 1; i <= fromIndex + PRE_WINDOW; i++) {
-    if (i >= chunks.length) break;
+  if (jobId !== currentJobId) return;
+  const last = Math.min(chunks.length - 1, fromIndex + PRE_WINDOW);
+  for (let i = fromIndex + 1; i <= last; i++) {
     if (audioCache[i]) continue;
-    if (preGeneratingSet.has(i)) continue;
-    preGenerateNext(i, jobId);
-    break; // 等这个完成后由它自己触发下一个，保证 previous 上下文正确
-  }
-}
-
-async function preGenerateNext(index, jobId) {
-  if (index >= chunks.length) return;
-  if (audioCache[index]) return;
-  if (preGeneratingSet.has(index)) return;
-
-  preGeneratingSet.add(index);
-
-  const mode  = modeSelect?.value  || "original";
-  const voice = voiceSelect?.value || "young_female";
-
-  try {
-    const textToSend = rewrittenChunks[index] || chunks[index];
-
-    const result = await generateAudioFromText(
-      textToSend,
-      mode,
-      voice,
-      preGenerateAbort.signal,
-      rewrittenChunks[index - 1] || null,
-      index + 1,
-      chunks.length
-    );
-
-    if (jobId !== currentJobId) {
-      preGeneratingSet.delete(index);
-      return;
-    }
-
-    const url           = result.url;
-    const rewrittenText = result.rewritten;
-
-    if (!rewrittenChunks[index] && rewrittenText) {
-      rewrittenChunks[index] = rewrittenText;
-    }
-
-    audioCache[index] = url;
-    preGeneratingSet.delete(index);
-
-    // 生成完一段后继续填窗口
-    fillWindow(currentIndex, jobId);
-
-  } catch (e) {
-    preGeneratingSet.delete(index);
-    if (e?.name === "AbortError") return;
-    console.log("preGenerateNext error:", e);
+    if (inflight.has(i)) break;
+    if (i > 0 && !contextReady[i - 1]) break;
+    ensureChunkAudio(i, jobId).catch(e => {
+      if (e?.name === "AbortError") return;
+      console.log("preGenerate error:", e);
+    });
+    break;
   }
 }
 
@@ -1095,21 +1073,13 @@ generateBtn?.addEventListener("click", async function () {
   currentJobId += 1;
   const jobId = currentJobId;
 
-  // 加速启动：前3段切小（约300字），之后恢复2200字大段
-  const warmupParts = splitTextIntoChunks(text, { maxLen: 300, minLen: 150 });
-
-  if (warmupParts.length > 3) {
-    const warmup   = warmupParts.splice(0, 3);
-    const restText = warmupParts.join("\n\n");
-    const restParts = splitTextIntoChunks(restText, { maxLen: 2200, minLen: 800 });
-    chunks = [...warmup, ...restParts];
-  } else {
-    chunks = warmupParts;
-  }
+  // 段长逐段放大（约 150 起，1.6 倍封顶，最长 2200），让播放盖住下一段生成。
+  chunks = buildReadingChunks(text);
 
   currentIndex    = 0;
   maxReachedIndex = -1;
   rewrittenChunks = [];
+  contextReady    = [];
 
   await saveToShelf();
   saveSession();
@@ -1209,60 +1179,7 @@ audioPlayer?.addEventListener("ended", async function () {
   currentIndex += 1;
   saveSession();
 
-  if (audioCache[currentIndex]) {
-    const url = audioCache[currentIndex];
-    delete audioCache[currentIndex - 1];  // 释放已播放的
-
-    if (currentAudioUrl) {
-      try { URL.revokeObjectURL(currentAudioUrl); } catch {}
-    }
-
-    currentAudioUrl = url;
-    audioPlayer.src = url;
-    audioPlayer.currentTime = 0;
-    audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
-
-    maxReachedIndex = Math.max(maxReachedIndex, currentIndex);
-    renderChunkNav();
-
-    setStatus(`播放第 ${currentIndex + 1}/${chunks.length} 段`, "ok", {
-      busy: false,
-      step: currentIndex + 1,
-      total: chunks.length
-    });
-
-    try {
-      await audioPlayer.play();
-    } catch (e) {
-      console.log("audioCache play() 失败，重新生成:", e);
-      // play() 失败时回退到 playChunk 重新尝试
-      const jobId = currentJobId;
-      try {
-        await playChunk(currentIndex, jobId);
-      } catch (e2) {
-        if (e2?.name === "AbortError") return;
-        setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
-        isAutoPlaying = false;
-      }
-      return;
-    }
-
-    // 滑动窗口，继续填满
-    fillWindow(currentIndex, currentJobId);
-
-    return;
-  }
-
-  if (currentIndex >= chunks.length) {
-    setStatus("全部播放完成 ✅", "ok", {
-      busy: false,
-      step: chunks.length,
-      total: chunks.length
-    });
-    isAutoPlaying = false;
-    return;
-  }
-
+  // 一律走 playChunk：缓存命中直接播，在途请求则等待，不会再发第二条 /tts。
   const jobId = currentJobId;
   try {
     await playChunk(currentIndex, jobId);
@@ -1315,7 +1232,21 @@ window.addEventListener("load", async function () {
       }
     }
     textInput.value = restoredText;
+    // 有保存的分段就沿用。没有分段时按旧算法重建，避免新规则把旧的段索引错位。
+    let rebuiltChunks = false;
+    if ((!restoredChunks || restoredChunks.length === 0) && restoredText) {
+      restoredChunks = resolvePlaybackChunks(restoredText, null);
+      rebuiltChunks = restoredChunks.length > 0;
+    }
     chunks = restoredChunks;
+    contextReady = [];
+    if (rebuiltChunks && session.refId) {
+      saveTextRecord(session.refId, {
+        text: restoredText,
+        chunks: restoredChunks,
+        fileName: null
+      }).catch(e => console.log("saveTextRecord error:", e));
+    }
     lastSavedTextSig = restoredText
       ? session.refId + ":" + restoredText.length + ":" + restoredChunks.length
       : null;
