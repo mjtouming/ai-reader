@@ -4,7 +4,8 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "node test/chunks_node.mjs && node test/cleaner_node.mjs && node test/pdf_clean_node.mjs",
+    "test": "node test/chunks_node.mjs && node test/cleaner_node.mjs && node test/pdf_clean_node.mjs && node test/text_input_draft_node.mjs",
+    "test:text-input": "node test/text_input_browser.mjs",
     "test:pipeline": "node test/pipeline_browser.mjs --assert",
     "test:frontmatter": "node test/frontmatter_browser.mjs",
     "start": "node server.js"
