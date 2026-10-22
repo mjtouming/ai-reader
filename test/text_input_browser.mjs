@@ -104,10 +104,13 @@ const pageErrors = [];
 async function openPage() {
   const page = await browser.newPage();
   page.on("dialog", dialog => dialog.accept());
-  page.on("pageerror", err => pageErrors.push(String(err)));
+  page.on("pageerror", err => pageErrors.push(err?.stack || String(err)));
   await page.evaluateOnNewDocument(() => {
-    localStorage.clear();
-    localStorage.setItem("ai_reader_visited", "1");
+    // 新文档刚起来时（例如 about:blank）读 localStorage 会抛 SecurityError。
+    try {
+      localStorage.clear();
+      localStorage.setItem("ai_reader_visited", "1");
+    } catch {}
   });
   await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
   await page.goto(origin, { waitUntil: "domcontentloaded" });
