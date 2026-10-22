@@ -1,7 +1,8 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261021-3';
+import { generateAudioFromText } from './audioEngine.js?v=20261022-1';
 import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261021-3';
-import { cleanBookText } from './bookCleaner.mjs?v=20261021-3';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261022-1';
+import { cleanBookText } from './bookCleaner.mjs?v=20261022-1';
+import { createTextDraft } from './textInputDraft.mjs?v=20261022-1';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -19,6 +20,74 @@ const chunkNav    = document.getElementById("chunkNav");
 const sleepTimer  = document.getElementById("sleepTimer");
 
 const VOICE_MANUAL_KEY = "ai_reader_voice_manual";
+
+// 用户点进正文框是为了粘贴新内容。先把框清空，原文留在 textDraft 里。
+// 没粘贴也没输入就失焦时写回原文。切书、恢复进度这类程序化赋值走 writeTextInput，
+// 不能被当成点击，也不能在失焦时被旧原文盖掉。
+const textDraft = createTextDraft();
+let textDraftPass = 0;
+
+function readTextInput() {
+  return textDraft.read(textInput?.value || "");
+}
+
+function writeTextInput(next) {
+  if (!textInput) return;
+  textDraftPass += 1;
+  const value = next == null ? "" : String(next);
+  textDraft.runWrite(() => {
+    textInput.value = value;
+  });
+}
+
+function reclearTextInput(pass) {
+  if (pass !== textDraftPass || !textInput) return;
+  if (!textDraft.shouldReclear(textInput.value, document.activeElement === textInput)) return;
+  textInput.value = "";
+  try { textInput.setSelectionRange(0, 0); } catch {}
+}
+
+if (textInput) {
+  textInput.addEventListener("focus", () => {
+    const decision = textDraft.onFocus(textInput.value);
+    if (decision.type !== "clear") return;
+    textInput.value = "";
+    try { textInput.setSelectionRange(0, 0); } catch {}
+    const pass = textDraftPass;
+    // iOS 打开键盘时有时会把刚清掉的原文写回去，短窗口内再清一次。
+    // 用户已经粘贴或输入之后 shouldReclear 为 false，不会把新内容清掉。
+    requestAnimationFrame(() => reclearTextInput(pass));
+    for (const ms of [30, 120, 300]) setTimeout(() => reclearTextInput(pass), ms);
+  });
+
+  textInput.addEventListener("blur", () => {
+    const decision = textDraft.onBlur(textInput.value);
+    textDraftPass += 1;
+    if (decision.type === "restore") textInput.value = decision.value;
+  });
+
+  textInput.addEventListener("compositionstart", () => {
+    textDraft.onCompositionStart();
+  });
+
+  textInput.addEventListener("compositionend", () => {
+    textDraft.onCompositionEnd(textInput.value);
+  });
+
+  textInput.addEventListener("paste", () => {
+    textDraft.onPaste();
+  });
+
+  textInput.addEventListener("beforeinput", (event) => {
+    if (event.isComposing) return;
+    textDraft.onUserInput(event.inputType || "");
+  });
+
+  textInput.addEventListener("input", (event) => {
+    if (event.isComposing) return;
+    textDraft.onUserInput(event.inputType || "");
+  });
+}
 
 // 模式联动改声线时会同步触发 voice change；这段时间不要重启两遍。
 let applyingLinkedVoice = false;
@@ -108,7 +177,7 @@ function textRecord(text, chunkList, fileName, explicitRef) {
 function saveSession() {
   try {
     const prev  = loadSession() || {};
-    const text  = textInput?.value || "";
+    const text  = readTextInput();
     const refId = currentRefId(text);
     const data = {
       ...prev,
@@ -178,7 +247,7 @@ function currentRefId(text) {
 
 function deriveTitle() {
   if (currentFileName) return currentFileName;
-  const text = textInput?.value?.trim() || "";
+  const text = readTextInput().trim();
   if (text.length > 0) {
     return text.slice(0, 10).replace(/\s+/g, "") + (text.length > 10 ? "…" : "");
   }
@@ -187,7 +256,7 @@ function deriveTitle() {
 }
 
 async function saveToShelf() {
-  const text = textInput?.value?.trim() || "";
+  const text = readTextInput().trim();
   if (!text || !chunks.length) return;
 
   const newId = hashText(text);
@@ -274,7 +343,7 @@ async function loadBook(book) {
     return;
   }
 
-  textInput.value   = text;
+  writeTextInput(text);
   currentFileName   = rec?.fileName || book.fileName || null;
   modeSelect.value  = (book.mode === "translate" ? "original" : book.mode) || "original";
   voiceSelect.value = book.voice || "young_female";
@@ -398,7 +467,7 @@ function closeSheet() {
 function clearForNewBook() {
   noteUserInput();
   interruptPlayback("准备添加新书");
-  textInput.value = "";
+  writeTextInput("");
   chunks          = [];
   rewrittenChunks = [];
   contextReady    = [];
@@ -579,7 +648,7 @@ async function acceptBookFile(rawText, source, extra = {}) {
     result = { text: rawText || "", original: rawText || "", changed: false, removedChars: 0 };
   }
 
-  textInput.value = result.text || "";
+  writeTextInput(result.text || "");
   currentFrontMatter = null;
   chunksFromCleaned = false;
   hideFrontMatterBar();
@@ -614,7 +683,7 @@ async function restoreFrontMatterText() {
   const rebuild = chunks.length > 0 && (
     chunksFromCleaned || sameBookText(currentBookText, cleaned)
   );
-  textInput.value = original;
+  writeTextInput(original);
   currentFrontMatter = null;
   chunksFromCleaned = false;
   hideFrontMatterBar();
@@ -1080,7 +1149,7 @@ fileInput?.addEventListener("change", async function () {
 // ── Generate ──────────────────────────────────────────────────
 generateBtn?.addEventListener("click", async function () {
   noteUserInput();
-  let text = textInput.value.trim();
+  let text = readTextInput().trim();
   if (!text) {
     alert("请输入文字");
     return;
@@ -1125,8 +1194,8 @@ generateBtn?.addEventListener("click", async function () {
       setStatus("YouTube 字幕提取失败 ❌：" + ytError.message, "bad", { busy: false });
       return;
     }
-    textInput.value = ytData.text || "";
-    text = textInput.value;
+    writeTextInput(ytData.text || "");
+    text = readTextInput();
     modeSelect.value  = "original";
     setStatus("字幕已提取，准备生成...", "info");
   }
@@ -1311,7 +1380,7 @@ window.addEventListener("load", async function () {
       }
     }
     if (currentJobId > 0 || epochAtStart !== userInputEpoch) return;
-    textInput.value = restoredText;
+    writeTextInput(restoredText);
     // 有保存的分段就沿用。没有分段时按旧算法重建，避免新规则把旧的段索引错位。
     let rebuiltChunks = false;
     if ((!restoredChunks || restoredChunks.length === 0) && restoredText) {
@@ -1413,7 +1482,7 @@ window.addEventListener("DOMContentLoaded", () => {
 诚宜开张圣听，以光先帝遗德，恢弘志士之气，不宜妄自菲薄，引喻失义，以塞忠谏之路也。
 `;
 
-    textInput.value   = defaultText.trim();
+    writeTextInput(defaultText.trim());
     modeSelect.value  = "story";
     voiceSelect.value = "elder_male";
     currentFileName   = "出师表节选";
