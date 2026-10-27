@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20261022-1" />
+  <link rel="stylesheet" href="style.css?v=20261027-2" />
 </head>
 
 <body>
@@ -183,9 +183,9 @@
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <span class="drop-text">点击或拖拽文件到此处</span>
-          <span class="drop-formats">PDF · TXT · DOCX</span>
+          <span class="drop-formats">PDF · TXT · DOCX · Markdown</span>
         </label>
-        <input type="file" id="fileInput" accept=".txt,.docx,.pdf" class="sr-only">
+        <input type="file" id="fileInput" accept=".txt,.docx,.pdf,.md,.markdown,text/plain,text/markdown,text/x-markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only">
       </div>
 
       <div class="spacer"></div>
@@ -269,7 +269,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20261022-1"></script>
+  <script type="module" src="./app.js?v=20261027-2"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {

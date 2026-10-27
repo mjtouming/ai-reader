@@ -329,6 +329,63 @@ assert.equal(expected.changed, true);
   await page.close();
 }
 
+{
+  const context = await browser.createBrowserContext();
+  const page = await context.newPage();
+  await arm(page);
+  await page.setViewport({ width: 390, height: 844 });
+  await page.goto(origin, { waitUntil: "load" });
+  const accepted = await page.$eval("#fileInput", el => el.accept.split(","));
+  for (const type of [".txt", ".docx", ".pdf", ".md", ".markdown", "text/plain", "text/markdown", "text/x-markdown", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]) {
+    assert.ok(accepted.includes(type), `文件选择器缺少 ${type}`);
+  }
+  const paragraph = "山间的小屋亮着灯，旅人走过石桥，在门前停了下来。".repeat(35);
+  const markdown = `---\ntitle: 不朗读的元数据\n---\n# 山间故事\n\n${paragraph}\n\n**第二段**，继续往前走。\n\n\`\`\`js\n不朗读的代码\n\`\`\``;
+  const plain = `山间故事\n\n${paragraph}\n\n第二段，继续往前走。`;
+  for (const extension of ["md", "MD", "markdown", "MaRkDoWn"]) {
+    await page.focus("#textInput");
+    await page.evaluate(({ content, name }) => {
+      const input = document.getElementById("fileInput");
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([content], name, { type: "application/octet-stream" }));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }, { content: markdown, name: `山间故事.${extension}` });
+    await page.waitForFunction(expected => document.getElementById("statusText")?.textContent.includes("Markdown 已载入")
+      && document.getElementById("textInput")?.value === expected, {}, plain);
+    assert.equal(await page.$eval("#textInput", el => el.value), plain, extension);
+    await page.$eval("#textInput", el => el.blur());
+    assert.equal(await page.$eval("#textInput", el => el.value), plain, "导入不能被旧草稿覆盖");
+  }
+  await page.evaluate(() => {
+    document.getElementById("audioPlayer").addEventListener("play", event => event.target.pause());
+  });
+  const beforeMarkdown = ttsLog.length;
+  await page.$eval("#generateBtn", el => el.click());
+  await waitForTts(beforeMarkdown, text => text.includes("山间故事"));
+  await page.waitForSelector("#chunkNav select");
+  assert.ok(await page.$$eval("#chunkNav option", nodes => nodes.length) > 1, "Markdown 没有按现有逻辑分段");
+  await page.select("#chunkNav select", "1");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ai_reader_session_v2") || "null")?.currentIndex === 1);
+  const saved = await page.evaluate(() => ({
+    session: JSON.parse(localStorage.getItem("ai_reader_session_v2")),
+    shelf: JSON.parse(localStorage.getItem("ai_reader_shelf_v2"))
+  }));
+  assert.equal(saved.shelf.books[0].title, "山间故事");
+  assert.equal(saved.shelf.books[0].currentIndex, 1);
+  assert.equal(saved.shelf.books[0].textLength, plain.length);
+  assert.ok(ttsLog.slice(beforeMarkdown).every(text => !text.includes("不朗读") && !text.includes("**")));
+  await page.reload({ waitUntil: "load" });
+  await page.waitForFunction(() => document.querySelector("#chunkNav select")?.selectedIndex === 1);
+  assert.equal(await page.$eval("#textInput", el => el.value), plain, "Markdown 会话恢复正文不一致");
+  await page.focus("#textInput");
+  assert.equal(await page.$eval("#textInput", el => el.value), "", "Markdown 正文聚焦未清空");
+  await page.$eval("#textInput", el => el.blur());
+  assert.equal(await page.$eval("#textInput", el => el.value), plain, "Markdown 正文失焦未恢复");
+  await context.close();
+  console.log("markdown_browser: extensions, import, chunks, title, shelf, progress, reload and focus ok");
+}
+
 await browser.close();
 await new Promise(resolve => server.close(resolve));
 

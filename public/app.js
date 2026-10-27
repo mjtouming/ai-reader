@@ -1,8 +1,9 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261022-1';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261022-1';
-import { cleanBookText } from './bookCleaner.mjs?v=20261022-1';
-import { createTextDraft } from './textInputDraft.mjs?v=20261022-1';
+import { generateAudioFromText } from './audioEngine.js?v=20261027-2';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261027-2';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261027-2';
+import { cleanBookText } from './bookCleaner.mjs?v=20261027-2';
+import { createTextDraft } from './textInputDraft.mjs?v=20261027-2';
+import { markdownToText } from './markdownText.mjs?v=20261027-2';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -1043,6 +1044,7 @@ async function playChunk(index, jobId) {
   try {
     await audioPlayer.play();
   } catch (e) {
+    if (jobId !== currentJobId || epoch !== playbackEpoch) return;
     console.log("play() 被浏览器拒绝或异常:", e);
     if (audioPlayer.paused) {
       // Safari 自动播放被拦截，提示用户手动点击。此时不要抢着发下一段。
@@ -1082,18 +1084,22 @@ fileInput?.addEventListener("change", async function () {
   noteUserInput();
   interruptPlayback("已切换文件，停止当前播放");
 
-  if (file.name.endsWith(".txt")) {
+  const extension = file.name.split(".").pop().toLowerCase();
+  if (["txt", "md", "markdown"].includes(extension)) {
+    const isMarkdown = extension !== "txt";
     const reader = new FileReader();
     reader.onload = async function (e) {
       currentFileName = file.name.replace(/\.[^.]+$/, "");
-      await acceptBookFile(e.target.result || "", "txt");
-      setStatus("TXT 已载入 ✅", "ok");
+      const content = e.target.result || "";
+      await acceptBookFile(isMarkdown ? markdownToText(content) : content, "txt");
+      setStatus(`${isMarkdown ? "Markdown" : "TXT"} 已载入 ✅`, "ok");
     };
+    reader.onerror = () => setStatus("文件读取失败 ❌", "bad", { busy: false });
     reader.readAsText(file);
     return;
   }
 
-  if (file.name.endsWith(".pdf")) {
+  if (extension === "pdf") {
     const formData = new FormData();
     formData.append("file", file);
 
@@ -1120,7 +1126,7 @@ fileInput?.addEventListener("change", async function () {
     return;
   }
 
-  if (file.name.endsWith(".docx")) {
+  if (extension === "docx") {
     const formData = new FormData();
     formData.append("file", file);
 
