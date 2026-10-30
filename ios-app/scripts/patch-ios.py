@@ -60,8 +60,10 @@ def patch_info_plist(path):
 
 
 def generate_app_icon(assets_dir, public_dir):
-    candidates = ["icon-app.png", "apple-touch-icon.png", "icon.png"]
-    source = next((public_dir / name for name in candidates if (public_dir / name).is_file()), None)
+    # 优先使用按当前网页 logo（public/icon.svg）渲染的 1024 图标
+    preferred = Path(__file__).resolve().parent.parent / "assets" / "AppIcon-1024.png"
+    candidates = ["apple-touch-icon.png", "icon-app.png", "icon.png"]
+    source = preferred if preferred.is_file() else next((public_dir / name for name in candidates if (public_dir / name).is_file()), None)
     if source is None:
         print("::warning::未找到现有 PNG 图标，保留 Capacitor 默认图标")
         return
