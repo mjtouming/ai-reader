@@ -1,9 +1,9 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261027-2';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261027-2';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261027-2';
-import { cleanBookText } from './bookCleaner.mjs?v=20261027-2';
-import { createTextDraft } from './textInputDraft.mjs?v=20261027-2';
-import { markdownToText } from './markdownText.mjs?v=20261027-2';
+import { generateAudioFromText } from './audioEngine.js?v=20261030-1';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261030-1';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261030-1';
+import { cleanBookText } from './bookCleaner.mjs?v=20261030-1';
+import { createTextDraft } from './textInputDraft.mjs?v=20261030-1';
+import { markdownToText } from './markdownText.mjs?v=20261030-1';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -124,6 +124,7 @@ let rewrittenChunks  = [];
 let currentIndex     = 0;
 let maxReachedIndex  = -1;
 let isAutoPlaying    = false;
+let playbackControlId = 0;
 let sleepMode        = null;
 let sleepTargetTime  = null;
 let restoreTime      = 0;
@@ -524,11 +525,15 @@ async function jumpToChunk(index) {
   } catch (e) {
     if (e?.name === "AbortError") {
       // 跳转途中又被换声线/换书打断时，不能把新任务的连播标志清掉。
-      if (jobId === currentJobId) isAutoPlaying = false;
+      if (jobId === currentJobId) {
+        isAutoPlaying = false;
+        syncPlaybackState();
+      }
       return;
     }
     setStatus("跳转失败 ❌", "bad", { busy: false });
     isAutoPlaying = false;
+    syncPlaybackState();
   }
 }
 
@@ -696,6 +701,7 @@ async function restoreFrontMatterText() {
   }
 
   interruptPlayback("已恢复原文，重新分段生成…");
+  const controlId = playbackControlId;
   chunks = buildReadingChunks(original);
   currentIndex = 0;
   maxReachedIndex = -1;
@@ -734,6 +740,7 @@ async function restoreFrontMatterText() {
     return;
   }
 
+  if (controlId !== playbackControlId) return;
   isAutoPlaying = true;
   currentJobId += 1;
   const jobId = currentJobId;
@@ -750,6 +757,7 @@ async function restoreFrontMatterText() {
     console.error(error);
     setStatus("恢复原文后生成失败 ❌", "bad", { busy: false });
     isAutoPlaying = false;
+    syncPlaybackState();
   }
 }
 
@@ -832,12 +840,14 @@ function restartPlaybackIfActive(statusLabel, opts = {}) {
       const fail = statusLabel.startsWith("切换声线") ? "切换声线失败 ❌" : "切换后重新生成失败 ❌";
       setStatus(fail, "bad", { busy: false });
       isAutoPlaying = false;
+      syncPlaybackState();
     }
   });
 }
 
 function interruptPlayback(reason = "") {
   isAutoPlaying = false;
+  playbackControlId += 1;
   restoreTime  = 0;   // 恢复进度只在"继续播放"路径生效，任何打断/跳段/换书都不得带入旧秒数
   playbackEpoch += 1;
   activeGenIndex = -1;
@@ -868,6 +878,7 @@ function interruptPlayback(reason = "") {
   }
 
   updateNowPlayingTitle(null);
+  syncPlaybackState();
   if (reason) setStatus(reason, "info", { busy: false });
 }
 
@@ -963,7 +974,9 @@ async function runChunkRequest(index, jobId, epoch, token, opts) {
 }
 
 async function playChunk(index, jobId) {
-  if (jobId !== currentJobId) return;
+  if (jobId !== currentJobId || !isAutoPlaying) return;
+  syncPlaybackState();
+  const controlId = playbackControlId;
   const total = chunks.length;
   if (index >= total) {
     setStatus("全部播放完成 ✅", "ok", {
@@ -972,6 +985,7 @@ async function playChunk(index, jobId) {
       total
     });
     isAutoPlaying = false;
+    syncPlaybackState();
     return;
   }
 
@@ -995,6 +1009,7 @@ async function playChunk(index, jobId) {
       result = await ensureChunkAudio(index, jobId, { foreground: true });
     } catch (e) {
       activeGenIndex = -1;
+      if (jobId !== currentJobId || epoch !== playbackEpoch || controlId !== playbackControlId || !isAutoPlaying) return;
       if (e?.name === "AbortError") {
         console.log("生成被取消");
         return;
@@ -1002,12 +1017,12 @@ async function playChunk(index, jobId) {
       throw e;
     }
     activeGenIndex = -1;
-    if (jobId !== currentJobId || epoch !== playbackEpoch) return;
+    if (jobId !== currentJobId || epoch !== playbackEpoch || controlId !== playbackControlId || !isAutoPlaying) return;
     audioUrl = result?.url || null;
     if (audioUrl && audioCache[index] === audioUrl) delete audioCache[index];
   }
 
-  if (jobId !== currentJobId || epoch !== playbackEpoch) return;
+  if (jobId !== currentJobId || epoch !== playbackEpoch || controlId !== playbackControlId || !isAutoPlaying) return;
   if (!audioUrl) throw new Error("audioUrl is null (TTS failed)");
   // 缓存命中时没有改写稿，也要放行后面的预生成，避免窗口卡死。
   if (!contextReady[index]) contextReady[index] = true;
@@ -1044,18 +1059,19 @@ async function playChunk(index, jobId) {
   try {
     await audioPlayer.play();
   } catch (e) {
-    if (jobId !== currentJobId || epoch !== playbackEpoch) return;
+    if (jobId !== currentJobId || epoch !== playbackEpoch || controlId !== playbackControlId || !isAutoPlaying) return;
     console.log("play() 被浏览器拒绝或异常:", e);
     if (audioPlayer.paused) {
       // Safari 自动播放被拦截，提示用户手动点击。此时不要抢着发下一段。
       setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
       isAutoPlaying = false;
+      syncPlaybackState();
       return;
     }
     console.log("实际已播放，忽略错误");
   }
 
-  if (jobId !== currentJobId || epoch !== playbackEpoch) return;
+  if (jobId !== currentJobId || epoch !== playbackEpoch || controlId !== playbackControlId || !isAutoPlaying) return;
   fillWindow(index, jobId);
 }
 
@@ -1229,15 +1245,19 @@ generateBtn?.addEventListener("click", async function () {
   rewrittenChunks = [];
   contextReady    = [];
 
+  const controlId = playbackControlId;
+  isAutoPlaying = true;
+  syncPlaybackState();
   await saveToShelf();
   saveSession();
   renderChunkNav();
 
-  isAutoPlaying = true;
+  if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
 
   if (chunks.length === 0) {
     alert("没有可朗读内容");
     isAutoPlaying = false;
+    syncPlaybackState();
     return;
   }
 
@@ -1250,44 +1270,68 @@ generateBtn?.addEventListener("click", async function () {
     console.error(error);
     setStatus("生成/播放失败 ❌", "bad", { busy: false });
     isAutoPlaying = false;
+    syncPlaybackState();
   }
 });
 
 // ── Play / Pause ──────────────────────────────────────────────
 const playPauseBtn = document.getElementById("playPauseBtn");
 
-playPauseBtn?.addEventListener("click", async function () {
-
-  if (!audioPlayer.src && chunks.length > 0) {
+function syncPlaybackState() {
+  if (playPauseBtn) playPauseBtn.innerText = isAutoPlaying ? "⏸ 暂停" : "▶️ 播放";
+  if ("mediaSession" in navigator) {
     try {
-      isAutoPlaying = true;
-      currentJobId += 1;
-      const jobId = currentJobId;
+      navigator.mediaSession.playbackState = isAutoPlaying ? "playing" : (audioPlayer.src || chunks.length ? "paused" : "none");
+    } catch {}
+  }
+}
+
+function pausePlayback() {
+  isAutoPlaying = false;
+  playbackControlId += 1;
+  activeGenIndex = -1;
+  audioPlayer.pause();
+  syncPlaybackState();
+  setStatus("已暂停", "ok", { busy: false });
+  saveSession();
+}
+
+async function resumePlayback() {
+  if (isAutoPlaying) return;
+  if (!audioPlayer.src && !chunks.length) return;
+  const controlId = ++playbackControlId;
+  if (currentJobId === 0) currentJobId += 1;
+  const jobId = currentJobId;
+  isAutoPlaying = true;
+  syncPlaybackState();
+  try {
+    if (!audioPlayer.src || audioPlayer.ended) {
       await playChunk(currentIndex, jobId);
-      playPauseBtn.innerText = "⏸ 暂停";
-    } catch (e) {
-      console.error("恢复播放失败:", e);
-      setStatus("恢复播放失败 ❌", "bad");
-      isAutoPlaying = false;
-    }
-    return;
-  }
-
-  if (audioPlayer.paused) {
-    try {
+    } else {
       await audioPlayer.play();
-      isAutoPlaying = true;
-      fillWindow(currentIndex, currentJobId);
-      playPauseBtn.innerText = "⏸ 暂停";
-    } catch (e) {
-      console.log("播放失败:", e);
+      if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
+      fillWindow(currentIndex, jobId);
     }
-  } else {
-    audioPlayer.pause();
-    playPauseBtn.innerText = "▶️ 播放";
+  } catch (error) {
+    if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
+    console.log("恢复播放失败:", error);
+    pausePlayback();
+    setStatus("已生成，点击 ▶ 继续播放", "ok", { busy: false });
   }
+}
 
+playPauseBtn?.addEventListener("click", () => {
+  if (isAutoPlaying || !audioPlayer.paused) pausePlayback();
+  else resumePlayback();
 });
+
+if ("mediaSession" in navigator) {
+  for (const [action, handler] of Object.entries({ play: resumePlayback, pause: pausePlayback, stop: pausePlayback })) {
+    try { navigator.mediaSession.setActionHandler(action, handler); } catch {}
+  }
+}
+
+syncPlaybackState();
 
 // ── Audio events ──────────────────────────────────────────────
 audioPlayer?.addEventListener("timeupdate", function () {
@@ -1307,11 +1351,17 @@ audioPlayer?.addEventListener("timeupdate", function () {
 });
 
 audioPlayer?.addEventListener("play", () => {
-  if (playPauseBtn) playPauseBtn.innerText = "⏸ 暂停";
+  if (!isAutoPlaying) {
+    audioPlayer.pause();
+    return;
+  }
+  syncPlaybackState();
 });
 
 audioPlayer?.addEventListener("pause", () => {
-  if (playPauseBtn) playPauseBtn.innerText = "▶️ 播放";
+  if (audioPlayer.paused && !audioPlayer.ended && audioPlayer.getAttribute("src")) {
+    pausePlayback();
+  }
 });
 
 audioPlayer?.addEventListener("ended", async function () {
@@ -1340,6 +1390,7 @@ audioPlayer?.addEventListener("ended", async function () {
       setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
     }
     isAutoPlaying = false;
+    syncPlaybackState();
   }
 });
 
@@ -1423,6 +1474,7 @@ window.addEventListener("load", async function () {
 
     if (chunks.length > 0) {
       isAutoPlaying = false;
+      syncPlaybackState();
       renderChunkNav();
       // 恢复书名显示
       const bookForRestore = matchedBook || (shelf?.books || []).find(b => b.id === currentBookId);
