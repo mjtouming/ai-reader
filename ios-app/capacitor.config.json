@@ -1,0 +1,12 @@
+{
+  "appId": "top.solonova.sona",
+  "appName": "灵听",
+  "webDir": "www",
+  "server": {
+    "url": "https://sona.solonova.top",
+    "errorPath": "index.html"
+  },
+  "ios": {
+    "preferredContentMode": "mobile"
+  }
+}

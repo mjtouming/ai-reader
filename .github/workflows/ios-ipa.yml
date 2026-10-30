@@ -1,0 +1,138 @@
+name: Build Sona unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/ios-shell
+      - main
+    paths:
+      - 'ios-app/**'
+      - '.github/workflows/ios-ipa.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Capacitor 8 需要 Node 22+，Node 20 不满足要求。
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # macos-15 的默认 Xcode 可能较旧；选择镜像内最新的正式版 Xcode 26+。
+      - name: Select Xcode 26 or newer
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          candidates = []
+          for path in Path('/Applications').glob('Xcode*.app'):
+              match = re.fullmatch(r'Xcode_(\d+(?:\.\d+)*)\.app', path.name)
+              if match:
+                  version = tuple(int(part) for part in match[1].split('.'))
+                  if version[0] >= 26:
+                      candidates.append((version, str(path)))
+          if not candidates:
+              raise SystemExit('此 runner 没有正式版 Xcode 26+，请更新 macOS 镜像')
+          print(max(candidates)[1])
+          PY
+          )"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$XCODE_APP/Contents/Developer" xcodebuild -version
+
+      # 只安装独立外壳的依赖，不在仓库根目录安装或改动网页应用。
+      - name: Install Capacitor
+        run: |
+          npm install --no-audit --no-fund
+          npm ls @capacitor/core @capacitor/cli @capacitor/ios
+
+      # 原生工程仅在 CI 临时生成，不提交 ios-app/ios。
+      - name: Generate and sync iOS project
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      # 放在最后一次 sync 之后，避免生成过程覆盖音频、名称和图标补丁。
+      - name: Configure background audio and AppIcon
+        run: |
+          python3 scripts/patch-ios.py
+          plutil -lint ios/App/App/Info.plist
+
+      # Capacitor 8 默认 SPM；若以后改用 CocoaPods，则优先使用其 workspace。
+      - name: Build unsigned device app
+        run: |
+          set -euo pipefail
+          if [[ -d ios/App/App.xcworkspace ]]; then
+            PROJECT_ARGS=(-workspace ios/App/App.xcworkspace)
+          elif [[ -d ios/App/App.xcodeproj ]]; then
+            PROJECT_ARGS=(-project ios/App/App.xcodeproj)
+          else
+            echo '::error::找不到生成的 Xcode project/workspace'
+            exit 1
+          fi
+          xcodebuild "${PROJECT_ARGS[@]}" \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/sona-derived-data" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      # 不用 archive/exportArchive，不需要证书、描述文件、Apple ID 或付费开发者账号。
+      - name: Verify and package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/sona-derived-data/Build/Products/Release-iphoneos/App.app"
+          test -d "$APP_PATH"
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")"
+          test -s "$APP_PATH/$EXECUTABLE"
+          lipo -verify_arch arm64 "$APP_PATH/$EXECUTABLE"
+          test ! -e "$APP_PATH/embedded.mobileprovision"
+          if codesign -d "$APP_PATH" 2>/dev/null; then
+            echo '::error::App 意外包含签名，拒绝将其标为 unsigned'
+            exit 1
+          fi
+          python3 - "$APP_PATH/Info.plist" <<'PY'
+          import plistlib
+          import sys
+
+          with open(sys.argv[1], 'rb') as handle:
+              info = plistlib.load(handle)
+          assert info['CFBundleIdentifier'] == 'top.solonova.sona'
+          assert info['CFBundleDisplayName'] == '灵听'
+          assert info['UIBackgroundModes'] == ['audio']
+          assert 'iPhoneOS' in info['CFBundleSupportedPlatforms']
+          PY
+          PACKAGE_DIR="$RUNNER_TEMP/sona-package"
+          mkdir -p "$PACKAGE_DIR/Payload"
+          ditto "$APP_PATH" "$PACKAGE_DIR/Payload/App.app"
+          IPA_PATH="$PWD/Sona-unsigned.ipa"
+          (cd "$PACKAGE_DIR" && zip -qry "$IPA_PATH" Payload)
+          unzip -t "$IPA_PATH"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sona-unsigned
+          path: ios-app/Sona-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

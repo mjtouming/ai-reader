@@ -7,3 +7,5 @@ rewrite_cache.json
 cookies.txt
 .claude/
 .claude/
+/ios-app/node_modules/
+/ios-app/ios/
