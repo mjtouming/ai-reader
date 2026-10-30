@@ -104,7 +104,7 @@ jobs:
           test -d "$APP_PATH"
           EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")"
           test -s "$APP_PATH/$EXECUTABLE"
-          lipo -verify_arch arm64 "$APP_PATH/$EXECUTABLE"
+          lipo "$APP_PATH/$EXECUTABLE" -verify_arch arm64
           test ! -e "$APP_PATH/embedded.mobileprovision"
           if codesign -d "$APP_PATH" 2>/dev/null; then
             echo '::error::App 意外包含签名，拒绝将其标为 unsigned'
