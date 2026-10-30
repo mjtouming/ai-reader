@@ -1,9 +1,10 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261030-1';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261030-1';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261030-1';
-import { cleanBookText } from './bookCleaner.mjs?v=20261030-1';
-import { createTextDraft } from './textInputDraft.mjs?v=20261030-1';
-import { markdownToText } from './markdownText.mjs?v=20261030-1';
+import { generateAudioFromText } from './audioEngine.js?v=20261030-3';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261030-3';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261030-3';
+import { cleanBookText } from './bookCleaner.mjs?v=20261030-3';
+import { createTextDraft } from './textInputDraft.mjs?v=20261030-3';
+import { markdownToText } from './markdownText.mjs?v=20261030-3';
+import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261030-3';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -128,6 +129,10 @@ let playbackControlId = 0;
 let sleepMode        = null;
 let sleepTargetTime  = null;
 let restoreTime      = 0;
+let restoreDuration  = 0;
+let audioChunkIndex  = -1;
+let listeningTitle   = "";
+let listeningFrame   = null;
 let currentAbort     = null;
 let currentJobId     = 0;
 let currentAudioUrl  = null;
@@ -175,6 +180,12 @@ function textRecord(text, chunkList, fileName, explicitRef) {
 }
 
 // ── Session ───────────────────────────────────────────────────
+function playbackPosition() {
+  return audioChunkIndex === currentIndex && audioPlayer?.src
+    ? { time: audioPlayer.currentTime || 0, duration: audioPlayer.duration || 0 }
+    : { time: restoreTime, duration: restoreDuration };
+}
+
 // v2：localStorage 只存元数据指针（refId + 进度），全文按需写入 IndexedDB
 function saveSession() {
   try {
@@ -186,7 +197,8 @@ function saveSession() {
       refId,
       currentIndex,
       maxReachedIndex,
-      currentTime: audioPlayer?.currentTime || 0,
+      currentTime: playbackPosition().time,
+      duration: playbackPosition().duration,
       mode:  modeSelect?.value  || "original",
       voice: voiceSelect?.value || "young_female",
       speed: speedSelect?.value || "1",
@@ -285,7 +297,8 @@ async function saveToShelf() {
     totalChunks: chunks.length,
     currentIndex,
     maxReachedIndex,
-    currentTime: audioPlayer?.currentTime || 0,
+    currentTime: playbackPosition().time,
+    duration: playbackPosition().duration,
     mode:  modeSelect?.value  || "original",
     voice: voiceSelect?.value || "young_female",
     speed: speedSelect?.value || "1",
@@ -324,7 +337,8 @@ function updateShelfProgress() {
   if (!book) return;
   book.currentIndex    = currentIndex;
   book.maxReachedIndex = maxReachedIndex;
-  book.currentTime     = audioPlayer?.currentTime || 0;
+  book.currentTime     = playbackPosition().time;
+  book.duration        = playbackPosition().duration;
   book.totalChunks     = chunks.length;
   book.updatedAt       = Date.now();
   saveShelf(shelf);
@@ -368,6 +382,7 @@ async function loadBook(book) {
   currentIndex    = Math.min(book.currentIndex || 0, Math.max(0, chunks.length - 1));
   maxReachedIndex = book.maxReachedIndex ?? currentIndex;
   restoreTime     = book.currentTime || 0;
+  restoreDuration = book.duration || 0;
   currentBookId   = book.id;
   currentBookText = text;
   // IDB 里已有该书全文，标记指纹避免 saveSession 立刻重复写
@@ -377,7 +392,7 @@ async function loadBook(book) {
   renderChunkNav();
   updateNowPlayingTitle(book.title);
   const ppBtn = document.getElementById("playPauseBtn");
-  if (ppBtn) ppBtn.innerText = "▶ 播放";
+  if (ppBtn) ppBtn.innerText = "继续收听";
   setStatus(
     `已切换：${book.title}（第 ${currentIndex + 1}/${chunks.length} 段）`,
     "ok",
@@ -409,7 +424,7 @@ function renderShelf() {
   const shelf = loadShelf();
 
   if (!shelf.books.length) {
-    list.innerHTML = '<div style="padding:28px 20px;color:rgba(15,23,42,.4);font-size:14px;text-align:center;">书架还是空的，添加第一本书吧 📖</div>';
+    list.innerHTML = '<div class="empty-shelf">书架还是空的，添加第一本书吧</div>';
     return;
   }
 
@@ -489,17 +504,19 @@ function clearForNewBook() {
 
 // ── 段落导航 ──────────────────────────────────────────────────
 function renderChunkNav() {
+  syncListeningUI();
   if (!chunkNav) return;
   if (!chunks.length) { chunkNav.innerHTML = ""; return; }
 
   const sel = document.createElement("select");
   sel.className = "chunk-select";
+  sel.setAttribute("aria-label", "选择段落");
 
   for (let i = 0; i < chunks.length; i++) {
     const opt = document.createElement("option");
     opt.value = i;
-    opt.textContent = i === currentIndex ? `▶ 第 ${i + 1} 段` : `第 ${i + 1} 段`;
-    if (i === currentIndex)  opt.selected = true;
+    opt.textContent = `第 ${i + 1} 段`;
+    if (i === Math.min(currentIndex, chunks.length - 1)) opt.selected = true;
     sel.appendChild(opt);
   }
 
@@ -539,26 +556,56 @@ async function jumpToChunk(index) {
 
 // ── Now playing title ────────────────────────────────────────
 function updateNowPlayingTitle(title) {
-  const el = document.getElementById("nowPlayingTitle");
-  if (!el) return;
-  if (title) {
-    // 超过5个字用滚动，否则静止
-    const inner = document.createElement("span");
-    inner.className = "marquee-inner";
-    if (title.length > 5) {
-      // 复制一份文字实现无缝循环
-      inner.textContent = title + "　　" + title;
-      inner.classList.add("scrolling");
-    } else {
-      inner.textContent = title;
+  if (title) listeningTitle = title;
+  syncListeningUI();
+}
+
+function syncListeningUI() {
+  if (document.hidden || listeningFrame !== null) return;
+  listeningFrame = requestAnimationFrame(() => {
+    listeningFrame = null;
+    if (document.hidden) return;
+    const card = document.getElementById("listeningCard");
+    if (!card) return;
+    const total = chunks.length;
+    card.hidden = total === 0;
+    const statusSlot = document.getElementById(total ? "statusSlot" : "inputStatusSlot");
+    if (statusSlot && statusText.parentElement !== statusSlot) statusSlot.appendChild(statusText);
+    const title = total ? listeningTitle || deriveTitle() : "灵听";
+    document.getElementById("nowPlayingTitle").textContent = title;
+    document.getElementById("playerBookTitle").textContent = title;
+    document.getElementById("listeningState").textContent = isAutoPlaying ? "正在收听" : "上次听到";
+    document.getElementById("playerChunkInfo").textContent = total ? `播放第 ${Math.min(currentIndex + 1, total)}/${total} 段` : "尚未开始收听";
+    const position = playbackPosition();
+    const fraction = listeningProgress(1, 0, position.time, position.duration).fraction;
+    document.getElementById("timeBarFill").style.width = `${fraction * 100}%`;
+    document.getElementById("timeStart").textContent = formatPlaybackTime(position.time);
+    document.getElementById("timeEnd").textContent = formatPlaybackTime(position.duration);
+    if (!total) return;
+    document.getElementById("bookMetadata").textContent = `${(currentBookText || chunks.join("")).length.toLocaleString("en-US")} 字 · ${total} 段`;
+    document.getElementById("chunkPosition").textContent = `第 ${Math.min(currentIndex + 1, total)} / ${total} 段`;
+    const progress = listeningProgress(total, currentIndex, position.time, position.duration);
+    document.getElementById("playedPercent").textContent = `已播约 ${progress.percent}%`;
+    progressBar.setAttribute("aria-valuenow", String(progress.percent));
+    progressBar.classList.toggle("continuous", progress.continuous);
+    const segmentCount = progress.continuous ? 1 : total;
+    if (progressBar.children.length !== segmentCount) {
+      progressBar.replaceChildren();
+      for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++) {
+        const segment = document.createElement("span");
+        segment.className = "progress-segment";
+        segment.appendChild(document.createElement("span"));
+        progressBar.appendChild(segment);
+      }
     }
-    el.innerHTML = "";
-    el.appendChild(inner);
-    el.classList.add("visible");
-  } else {
-    el.classList.remove("visible");
-    setTimeout(() => { el.innerHTML = ""; }, 300);
-  }
+    for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++) {
+      const segment = progressBar.children[segmentIndex];
+      const done = !progress.continuous && segmentIndex < currentIndex;
+      const fraction = progress.continuous ? progress.ratio : done ? 1 : segmentIndex === currentIndex ? progress.fraction : 0;
+      segment.classList.toggle("done", done);
+      segment.firstElementChild.style.transform = `scaleX(${fraction})`;
+    }
+  });
 }
 
 // ── UI helpers ────────────────────────────────────────────────
@@ -595,10 +642,7 @@ function setStatus(text, type = "info", opts = {}) {
     // busy=true 仅在"生成中"禁用按钮；播放中必须保持可点击（粘贴新文本重新生成）
     generateBtn.disabled = opts.busy;
   }
-  if (progressBar && opts.total != null) {
-    progressBar.max   = opts.total;
-    progressBar.value = opts.step ?? 0;
-  }
+  syncListeningUI();
 }
 
 // ── 前置内容：只在加载书籍文件时清洗，粘贴和 YouTube 不走这里 ──
@@ -849,6 +893,8 @@ function interruptPlayback(reason = "") {
   isAutoPlaying = false;
   playbackControlId += 1;
   restoreTime  = 0;   // 恢复进度只在"继续播放"路径生效，任何打断/跳段/换书都不得带入旧秒数
+  restoreDuration = 0;
+  audioChunkIndex = -1;
   playbackEpoch += 1;
   activeGenIndex = -1;
 
@@ -1032,6 +1078,7 @@ async function playChunk(index, jobId) {
   }
   currentAudioUrl = audioUrl;
 
+  audioChunkIndex = index;
   audioPlayer.src = audioUrl;
   audioPlayer.currentTime = 0;
   audioPlayer.playbackRate = parseFloat(speedSelect?.value || "1");
@@ -1041,6 +1088,7 @@ async function playChunk(index, jobId) {
       try {
         audioPlayer.currentTime = restoreTime;
         restoreTime = 0;
+        restoreDuration = 0;
       } catch {}
     }, { once: true });
   }
@@ -1238,6 +1286,7 @@ generateBtn?.addEventListener("click", async function () {
 
   // 段长逐段放大（约 150 起，1.6 倍封顶，最长 2200），让播放盖住下一段生成。
   chunks = buildReadingChunks(text);
+  updateNowPlayingTitle(deriveTitle());
   chunksFromCleaned = !!(currentFrontMatter && sameBookText(text, currentFrontMatter.cleaned));
 
   currentIndex    = 0;
@@ -1278,7 +1327,13 @@ generateBtn?.addEventListener("click", async function () {
 const playPauseBtn = document.getElementById("playPauseBtn");
 
 function syncPlaybackState() {
-  if (playPauseBtn) playPauseBtn.innerText = isAutoPlaying ? "⏸ 暂停" : "▶️ 播放";
+  if (playPauseBtn) {
+    playPauseBtn.innerText = isAutoPlaying ? "暂停" : "继续收听";
+    playPauseBtn.classList.toggle("playing", isAutoPlaying);
+  }
+  const mainPlayBtn = document.getElementById("mainPlayBtn");
+  if (mainPlayBtn) mainPlayBtn.setAttribute("aria-label", isAutoPlaying ? "暂停" : "继续收听");
+  syncListeningUI();
   if ("mediaSession" in navigator) {
     try {
       navigator.mediaSession.playbackState = isAutoPlaying ? "playing" : (audioPlayer.src || chunks.length ? "paused" : "none");
@@ -1286,13 +1341,13 @@ function syncPlaybackState() {
   }
 }
 
-function pausePlayback() {
+function pausePlayback(reason = "已暂停") {
   isAutoPlaying = false;
   playbackControlId += 1;
   activeGenIndex = -1;
   audioPlayer.pause();
   syncPlaybackState();
-  setStatus("已暂停", "ok", { busy: false });
+  setStatus(typeof reason === "string" ? reason : "已暂停", "ok", { busy: false });
   saveSession();
 }
 
@@ -1336,11 +1391,8 @@ syncPlaybackState();
 // ── Audio events ──────────────────────────────────────────────
 audioPlayer?.addEventListener("timeupdate", function () {
 
-  if (sleepTargetTime && Date.now() >= sleepTargetTime) {
-    interruptPlayback("定时关闭");
-    sleepTargetTime = null;
-    return;
-  }
+  if (checkSleepTimer()) return;
+  syncListeningUI();
 
   const now = Date.now();
   if (now - lastSessionSave > 2000) {
@@ -1359,7 +1411,7 @@ audioPlayer?.addEventListener("play", () => {
 });
 
 audioPlayer?.addEventListener("pause", () => {
-  if (audioPlayer.paused && !audioPlayer.ended && audioPlayer.getAttribute("src")) {
+  if (isAutoPlaying && audioPlayer.paused && !audioPlayer.ended && audioPlayer.getAttribute("src")) {
     pausePlayback();
   }
 });
@@ -1367,14 +1419,17 @@ audioPlayer?.addEventListener("pause", () => {
 audioPlayer?.addEventListener("ended", async function () {
 
   if (sleepMode === "end") {
-    interruptPlayback("定时关闭（本段结束）");
-    sleepMode = null;
+    currentIndex = Math.min(currentIndex + 1, chunks.length);
+    resetSleepTimer();
+    pausePlayback("定时关闭（本段结束）");
+    renderChunkNav();
     return;
   }
 
   if (!isAutoPlaying) return;
 
   currentIndex += 1;
+  syncListeningUI();
   saveSession();
 
   // 一律走 playChunk：缓存命中直接播，在途请求则等待，不会再发第二条 /tts。
@@ -1423,6 +1478,7 @@ window.addEventListener("load", async function () {
     if (session.currentTime != null) {
       restoreTime = session.currentTime;
     }
+    restoreDuration = session.duration || 0;
 
     // 全文从 IndexedDB 取回。已存的书保持原样，不按新的清洗规则重切。
     let restoredText   = "";
@@ -1438,6 +1494,7 @@ window.addEventListener("load", async function () {
     }
     if (currentJobId > 0 || epochAtStart !== userInputEpoch) return;
     writeTextInput(restoredText);
+    currentFileName = restoredRecord?.fileName || null;
     // 有保存的分段就沿用。没有分段时按旧算法重建，避免新规则把旧的段索引错位。
     let rebuiltChunks = false;
     if ((!restoredChunks || restoredChunks.length === 0) && restoredText) {
@@ -1479,8 +1536,9 @@ window.addEventListener("load", async function () {
       // 恢复书名显示
       const bookForRestore = matchedBook || (shelf?.books || []).find(b => b.id === currentBookId);
       if (bookForRestore) updateNowPlayingTitle(bookForRestore.title);
+      else updateNowPlayingTitle(deriveTitle());
       setStatus(
-        `已恢复上次进度：第 ${currentIndex + 1}/${chunks.length} 段`,
+        `已恢复上次进度 · 停在 ${formatPlaybackTime(restoreTime)}`,
         "ok",
         {
           step:  currentIndex,
@@ -1500,12 +1558,57 @@ speedSelect?.addEventListener("change", function () {
 });
 
 // ── Sleep timer ───────────────────────────────────────────────
+function renderSleepTimer() {
+  if (document.hidden) return;
+  const active = sleepMode === "end" || sleepTargetTime !== null;
+  const label = sleepMode === "end" ? "本段结束" : sleepTargetTime !== null
+    ? formatPlaybackTime(Math.ceil(Math.max(0, sleepTargetTime - Date.now()) / 1000), true)
+    : "定时";
+  const timerLabel = document.getElementById("timerLabel");
+  const timerBtn = document.getElementById("timerBtn");
+  const playerTimer = document.getElementById("playerTimer");
+  if (timerLabel) timerLabel.textContent = label;
+  timerBtn?.classList.toggle("timer-active", active);
+  if (playerTimer) {
+    playerTimer.hidden = !active;
+    playerTimer.textContent = active ? label : "";
+  }
+}
+
+function resetSleepTimer() {
+  sleepMode = null;
+  sleepTargetTime = null;
+  if (sleepTimer) sleepTimer.value = "0";
+  renderSleepTimer();
+}
+
+function checkSleepTimer() {
+  if (sleepTargetTime === null || Date.now() < sleepTargetTime) return false;
+  resetSleepTimer();
+  pausePlayback("定时关闭");
+  return true;
+}
+
+setInterval(() => {
+  checkSleepTimer();
+  renderSleepTimer();
+}, 1000);
+
+document.addEventListener("visibilitychange", () => {
+  checkSleepTimer();
+  renderSleepTimer();
+  syncListeningUI();
+});
+
+audioPlayer?.addEventListener("loadedmetadata", syncListeningUI);
+audioPlayer?.addEventListener("seeked", syncListeningUI);
+
 sleepTimer?.addEventListener("change", function () {
 
   const value = sleepTimer.value;
 
-  sleepMode        = null;
-  sleepTargetTime  = null;
+  resetSleepTimer();
+  sleepTimer.value = value;
 
   if (value === "0") {
     setStatus("定时关闭已取消", "info");
@@ -1514,14 +1617,33 @@ sleepTimer?.addEventListener("change", function () {
 
   if (value === "end") {
     sleepMode = "end";
+    renderSleepTimer();
     setStatus("将在本段播放完后关闭", "info");
     return;
   }
 
   const seconds = parseInt(value);
   sleepTargetTime = Date.now() + seconds * 1000;
+  renderSleepTimer();
   setStatus(`已设置 ${seconds / 60} 分钟后关闭`, "info");
 
+});
+
+document.getElementById("uploadBtn")?.addEventListener("click", () => fileInput?.click());
+const uploadCard = document.querySelector(".new-listening-card");
+uploadCard?.addEventListener("dragover", event => {
+  event.preventDefault();
+  uploadCard.classList.add("drag-over");
+});
+uploadCard?.addEventListener("dragleave", event => {
+  if (!uploadCard.contains(event.relatedTarget)) uploadCard.classList.remove("drag-over");
+});
+uploadCard?.addEventListener("drop", event => {
+  event.preventDefault();
+  uploadCard.classList.remove("drag-over");
+  if (!event.dataTransfer?.files.length || !fileInput) return;
+  fileInput.files = event.dataTransfer.files;
+  fileInput.dispatchEvent(new Event("change"));
 });
 
 // ── Shelf UI events ───────────────────────────────────────────
