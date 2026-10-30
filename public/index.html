@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20261030-2" />
+  <link rel="stylesheet" href="style.css?v=20261030-3" />
 </head>
 
 <body>
@@ -48,8 +48,6 @@
           <div class="tagline">告别机械声，古文/外语自动翻译</div>
         </div>
 
-        <div id="nowPlayingTitle" class="now-playing-title"></div>
-
         <button id="shelfBtn" class="shelf-btn" title="书架">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="4" height="18" rx="1"/>
@@ -58,6 +56,7 @@
             <line x1="20" y1="3" x2="20" y2="21"/>
             <line x1="2" y1="21" x2="22" y2="21"/>
           </svg>
+          <span>书架</span>
         </button>
       </header>
 
@@ -67,128 +66,112 @@
         <div class="settings-row">
 
           <div class="ctrl-col">
-            <div class="ctrl-label">朗读模式</div>
-            <select id="modeSelect" class="ctrl-select">
+            <label class="ctrl-label" for="modeSelect">朗读模式</label>
+            <div class="ctrl-value"><select id="modeSelect" class="ctrl-select">
               <option value="original">原文朗读</option>
               <option value="story" selected>改成故事</option>
-            </select>
+            </select><span class="ctrl-arrow" aria-hidden="true"></span></div>
           </div>
 
           <div class="ctrl-sep"></div>
 
           <div class="ctrl-col">
-            <div class="ctrl-label">朗读者</div>
-            <select id="voiceSelect" class="ctrl-select">
+            <label class="ctrl-label" for="voiceSelect">朗读者</label>
+            <div class="ctrl-value"><select id="voiceSelect" class="ctrl-select">
               <option value="young_female">青年女</option>
               <option value="girl">少女</option>
               <option value="young_male">青年男</option>
               <option value="elder_male" selected>中老年男</option>
-            </select>
+            </select><span class="ctrl-arrow" aria-hidden="true"></span></div>
           </div>
 
           <div class="ctrl-sep"></div>
 
           <div class="ctrl-col">
-            <div class="ctrl-label">语速</div>
-            <select id="speedSelect" class="ctrl-select">
+            <label class="ctrl-label" for="speedSelect">语速</label>
+            <div class="ctrl-value"><select id="speedSelect" class="ctrl-select">
               <option value="0.8">0.8x</option>
               <option value="1" selected>1x</option>
               <option value="1.2">1.2x</option>
               <option value="1.5">1.5x</option>
-            </select>
+            </select><span class="ctrl-arrow" aria-hidden="true"></span></div>
           </div>
 
         </div>
         <div class="settings-divider"></div>
       </div>
 
-      <!-- Content Area -->
-      <div class="content-area">
-        <div class="section-title">文字/YouTube链接</div>
-        <div class="text-box">
-          <label class="sr-only" for="textInput">正文</label>
-          <textarea id="textInput" placeholder="粘贴文章 / YouTube 链接，或上传文件…"></textarea>
-        </div>
-        <div id="frontMatterBar" class="front-matter-bar" hidden>
-          <span class="front-matter-msg">已跳过前置内容 <span id="frontMatterCount">0</span> 字</span>
-          <span class="front-matter-dot" aria-hidden="true">·</span>
-          <button type="button" id="frontMatterView" class="front-matter-link">查看</button>
-          <span class="front-matter-slash" aria-hidden="true">/</span>
-          <button type="button" id="frontMatterRestore" class="front-matter-link">恢复原文</button>
-        </div>
-        <div id="frontMatterPreview" class="front-matter-preview" hidden>
-          <div class="front-matter-preview-hd">已跳过的前置内容</div>
-          <pre id="frontMatterPreviewBody"></pre>
-        </div>
-      </div>
-
-      <!-- Actions Section -->
-      <div class="actions-section">
-        <button id="generateBtn" class="btn-generate">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="white" style="flex-shrink:0"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
-          生成并播放
-        </button>
-        <button id="playPauseBtn" class="btn-outline" type="button">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><polygon points="5,3 19,12 5,21"/></svg>
-          播放
-        </button>
-        <div class="timer-wrap">
-          <button id="timerBtn" class="btn-outline" type="button">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
-            定时关闭
-          </button>
-          <!-- hidden real select for app.js compat -->
-          <select id="sleepTimer" class="sr-only">
-            <option value="0">关闭定时</option>
-            <option value="600">10 分钟</option>
-            <option value="1800">30 分钟</option>
-            <option value="3600">60 分钟</option>
-            <option value="end">本段结束</option>
-          </select>
-          <div id="timerDropdown" class="timer-dropdown hidden">
-            <button class="timer-option" data-val="600">10 分钟</button>
-            <button class="timer-option" data-val="1800">30 分钟</button>
-            <button class="timer-option" data-val="3600">60 分钟</button>
-            <button class="timer-option" data-val="end">本段结束</button>
-            <button class="timer-option" data-val="0">关闭定时</button>
+      <main class="content-area">
+        <section id="listeningCard" class="card listening-card" aria-label="正在收听" hidden>
+          <div class="listening-label"><span aria-hidden="true"></span><span id="listeningState">上次听到</span></div>
+          <h2 id="nowPlayingTitle" class="now-playing-title"></h2>
+          <div id="bookMetadata" class="book-metadata"></div>
+          <div class="progress-summary">
+            <span id="chunkPosition"></span>
+            <span id="playedPercent">已播约 0%</span>
           </div>
+          <div id="progressBar" class="segmented-progress" role="progressbar" aria-label="全书播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          <div id="statusSlot"></div>
+          <div class="actions-section">
+            <button id="playPauseBtn" class="btn-primary" type="button">继续收听</button>
+            <div id="chunkNav" class="chunk-nav"></div>
+            <div class="timer-wrap">
+              <button id="timerBtn" class="btn-outline" type="button" aria-expanded="false" aria-controls="timerDropdown">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+                <span id="timerLabel">定时</span>
+              </button>
+              <select id="sleepTimer" class="sr-only" aria-label="定时关闭">
+                <option value="0">关闭定时</option>
+                <option value="600">10 分钟</option>
+                <option value="1800">30 分钟</option>
+                <option value="3600">60 分钟</option>
+                <option value="end">本段结束</option>
+              </select>
+              <div id="timerDropdown" class="timer-dropdown hidden">
+                <button class="timer-option" data-val="600">10 分钟</button>
+                <button class="timer-option" data-val="1800">30 分钟</button>
+                <button class="timer-option" data-val="3600">60 分钟</button>
+                <button class="timer-option" data-val="end">本段结束</button>
+                <button class="timer-option" data-val="0">关闭定时</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="new-listening" aria-labelledby="newListeningTitle">
+          <div class="section-heading">
+            <h2 id="newListeningTitle">听点新的</h2>
+            <span>文字 · YouTube 链接 · 文件</span>
+          </div>
+          <div class="card new-listening-card">
+            <div class="text-box">
+              <label class="sr-only" for="textInput">正文</label>
+              <textarea id="textInput" rows="2" placeholder="粘贴文章或 YouTube 链接…"></textarea>
+            </div>
+            <div class="new-actions">
+              <button type="button" id="uploadBtn" class="drop-zone btn-outline">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                上传文件
+              </button>
+              <button id="generateBtn" class="btn-generate" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                生成并播放
+              </button>
+            </div>
+            <div class="drop-formats">PDF · TXT · DOCX · Markdown</div>
+            <input type="file" id="fileInput" accept=".txt,.docx,.pdf,.md,.markdown,text/plain,text/markdown,text/x-markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only">
+            <div id="inputStatusSlot"><div id="statusText" class="status info" role="status">就绪</div></div>
+          </div>
+        </section>
+        <div class="front-matter-ui" hidden>
+          <div id="frontMatterBar" class="front-matter-bar" hidden>
+            <span id="frontMatterCount">0</span>
+            <button type="button" id="frontMatterView">查看</button>
+            <button type="button" id="frontMatterRestore">恢复原文</button>
+          </div>
+          <div id="frontMatterPreview" hidden><pre id="frontMatterPreviewBody"></pre></div>
         </div>
-      </div>
-
-      <!-- Section Divider -->
-      <div class="section-divider"></div>
-
-      <!-- Progress Section -->
-      <div class="progress-section">
-        <div class="progress-top">
-          <div id="chunkNav" class="chunk-nav"></div>
-          <div id="statusText" class="status info">就绪</div>
-        </div>
-        <progress id="progressBar" value="0" max="100"></progress>
-      </div>
-
-      <!-- Section Divider -->
-      <div class="section-divider"></div>
-
-      <!-- Upload Section -->
-      <div class="upload-section">
-        <div class="upload-hd">
-          <div class="upload-title">上传文件</div>
-          <div class="upload-hint">提示：大文件建议先测试小段</div>
-        </div>
-        <label class="drop-zone" for="fileInput">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <span class="drop-text">点击或拖拽文件到此处</span>
-          <span class="drop-formats">PDF · TXT · DOCX · Markdown</span>
-        </label>
-        <input type="file" id="fileInput" accept=".txt,.docx,.pdf,.md,.markdown,text/plain,text/markdown,text/x-markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only">
-      </div>
-
-      <div class="spacer"></div>
+      </main>
 
     </div><!-- /wrap -->
 
@@ -214,8 +197,12 @@
       <div class="wrap player-inner">
 
         <div class="player-meta">
-          <span id="playerBookTitle" class="player-book-title"></span>
-          <span id="playerChunkInfo" class="player-chunk-info"></span>
+          <button type="button" class="player-art" id="playerShelfBtn" aria-label="打开书架"><img src="icon.svg" width="30" height="30" alt=""></button>
+          <div class="player-text">
+            <span id="playerBookTitle" class="player-book-title">灵听</span>
+            <span id="playerChunkInfo" class="player-chunk-info">尚未开始收听</span>
+          </div>
+          <span id="playerTimer" class="player-timer" hidden></span>
         </div>
 
         <!-- Timeline -->
@@ -239,8 +226,9 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.01"/>
             </svg>
+            <small aria-hidden="true">10</small>
           </button>
-          <button class="ctrl-btn main-play-btn" id="mainPlayBtn">
+          <button class="ctrl-btn main-play-btn" id="mainPlayBtn" aria-label="继续收听">
             <svg id="mainPlayIcon" width="18" height="18" viewBox="0 0 24 24">
               <polygon points="5,3 19,12 5,21" fill="white"/>
             </svg>
@@ -249,6 +237,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.01"/>
             </svg>
+            <small aria-hidden="true">10</small>
           </button>
           <button class="ctrl-btn" id="skipFwdBtn" title="下一段">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -256,20 +245,13 @@
             </svg>
           </button>
         </div>
-        <!-- 书架按钮：右侧独立定位，与控制栏垂直居中 -->
-        <button class="ctrl-btn player-shelf-corner" id="playerShelfBtn" title="书架">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-          </svg>
-        </button>
         </div><!-- /controls-wrap -->
 
       </div>
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20261030-2"></script>
+  <script type="module" src="./app.js?v=20261030-3"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {
@@ -303,16 +285,6 @@
 
     // Timeline
     if (audio && timeBarBg) {
-      audio.addEventListener('timeupdate', () => {
-        const pct = audio.duration ? audio.currentTime / audio.duration : 0;
-        if (timeBarFill) timeBarFill.style.width = (pct * 100) + '%';
-        if (timeStart) timeStart.textContent = fmt(audio.currentTime);
-        if (timeEnd) timeEnd.textContent = fmt(audio.duration);
-      });
-      audio.addEventListener('loadedmetadata', () => {
-        if (timeEnd) timeEnd.textContent = fmt(audio.duration);
-      });
-
       function seekTo(clientX) {
         const r = timeBarBg.getBoundingClientRect();
         if (audio.duration) {
@@ -337,17 +309,9 @@
       mainPlayBtn.addEventListener('click', () => playPauseBtn.click());
     }
 
-    // 拦截 app.js 的 emoji innerText，替换为简洁 SVG 图标
     if (playPauseBtn) {
-      const PPPLAY_HTML  = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;vertical-align:middle"><polygon points="5,3 19,12 5,21"/></svg> 播放';
-      const PPPAUSE_HTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;vertical-align:middle"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 暂停';
       new MutationObserver(() => {
-        const t = playPauseBtn.textContent.trim();
-        if (t.includes('暂停') && !playPauseBtn.querySelector('svg')) {
-          playPauseBtn.innerHTML = PPPAUSE_HTML;
-        } else if (t.includes('播放') && !playPauseBtn.querySelector('svg')) {
-          playPauseBtn.innerHTML = PPPLAY_HTML;
-        }
+        if (!document.hidden && mainPlayIcon) mainPlayIcon.innerHTML = playPauseBtn.textContent.includes('暂停') ? PAUSE_SVG : PLAY_SVG;
       }).observe(playPauseBtn, { childList: true, subtree: true, characterData: true });
     }
 
@@ -388,16 +352,19 @@
       timerBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         timerDropdown.classList.toggle('hidden');
+        timerBtn.setAttribute('aria-expanded', String(!timerDropdown.classList.contains('hidden')));
       });
-      document.addEventListener('click', () => timerDropdown.classList.add('hidden'));
+      document.addEventListener('click', () => {
+        timerDropdown.classList.add('hidden');
+        timerBtn.setAttribute('aria-expanded', 'false');
+      });
       timerDropdown.querySelectorAll('.timer-option').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const val = btn.dataset.val;
           if (sleepTimer) { sleepTimer.value = val; sleepTimer.dispatchEvent(new Event('change')); }
           timerDropdown.classList.add('hidden');
-          const icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg> ';
-          timerBtn.innerHTML = icon + (val === '0' ? '定时关闭' : btn.textContent.trim());
+          timerBtn.setAttribute('aria-expanded', 'false');
         });
       });
     }
@@ -448,13 +415,7 @@
       if (document.visibilityState === 'visible' && audio) {
         setTimeout(() => {
           const ppBtn = document.getElementById('playPauseBtn');
-          if (audio.paused) {
-            if (mainPlayIcon) mainPlayIcon.innerHTML = PLAY_SVG;
-            if (ppBtn) ppBtn.innerText = '▶️ 播放';
-          } else {
-            if (mainPlayIcon) mainPlayIcon.innerHTML = PAUSE_SVG;
-            if (ppBtn) ppBtn.innerText = '⏸ 暂停';
-          }
+          if (!document.hidden && mainPlayIcon) mainPlayIcon.innerHTML = ppBtn?.textContent.includes('暂停') ? PAUSE_SVG : PLAY_SVG;
         }, 200);
       }
     });
