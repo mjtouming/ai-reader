@@ -1,12 +1,12 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261031-5';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-5';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable, mergeStoryTail, planPlaybackChunks, needsStoryWholeRewrite } from './readingChunks.mjs?v=20261031-5';
-import { deriveDisplayTitle, fileNameApplies, shelfNames } from './bookTitle.mjs?v=20261031-5';
-import { textLikelyNeedsTranslation } from './classicalDetect.mjs?v=20261031-5';
-import { cleanBookText } from './bookCleaner.mjs?v=20261031-5';
-import { createTextDraft } from './textInputDraft.mjs?v=20261031-5';
-import { markdownToText } from './markdownText.mjs?v=20261031-5';
-import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-5';
+import { generateAudioFromText } from './audioEngine.js?v=20261031-6';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-6';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable, mergeStoryTail, planPlaybackChunks, needsStoryWholeRewrite } from './readingChunks.mjs?v=20261031-6';
+import { deriveDisplayTitle, fileNameApplies, shelfNames } from './bookTitle.mjs?v=20261031-6';
+import { textLikelyNeedsTranslation } from './classicalDetect.mjs?v=20261031-6';
+import { cleanBookText } from './bookCleaner.mjs?v=20261031-6';
+import { createTextDraft } from './textInputDraft.mjs?v=20261031-6';
+import { markdownToText } from './markdownText.mjs?v=20261031-6';
+import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-6';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -701,8 +701,10 @@ function setStatus(text, type = "info", opts = {}) {
     const icon = document.createElement("span");
     icon.className = "loading-icon spark spinning";
     icon.setAttribute("aria-hidden", "true");
-    for (let barIndex = 0; barIndex < 4; barIndex++) {
-      icon.appendChild(document.createElement("span"));
+    for (let rayIndex = 0; rayIndex < 12; rayIndex++) {
+      const ray = document.createElement("span");
+      ray.style.setProperty("--ray-index", rayIndex);
+      icon.appendChild(ray);
     }
 
     const textSpan = document.createElement("span");
