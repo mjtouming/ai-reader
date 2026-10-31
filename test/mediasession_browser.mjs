@@ -112,6 +112,7 @@ try {
     args: ["--no-sandbox", "--disable-dev-shm-usage", "--autoplay-policy=no-user-gesture-required", "--disable-gpu"]
   });
   const page = await browser.newPage();
+  await page.setViewport({ width: 420, height: 1200 });
   const errors = [];
   page.on("pageerror", error => errors.push(String(error)));
   page.setDefaultTimeout(10000);
@@ -184,14 +185,14 @@ try {
   async function assertStaysPaused(label) {
     await page.waitForFunction(() => document.getElementById("audioPlayer").paused
       && navigator.mediaSession.playbackState === "paused"
-      && document.getElementById("playPauseBtn").textContent.includes("播放"));
+      && document.getElementById("playPauseBtn").textContent.includes("继续收听"));
     await delay(250);
     const before = await snapshot();
     await delay(3500);
     const after = await snapshot();
     assert.equal(after.paused, true, `${label}: audio`);
     assert.equal(after.state, "paused", `${label}: Media Session`);
-    assert.match(after.button, /播放/, `${label}: 页面按钮`);
+    assert.match(after.button, /继续收听/, `${label}: 页面按钮`);
     assert.equal(after.src, before.src, `${label}: 不切换音源`);
     assert.equal(after.index, before.index, `${label}: 不跳段`);
     assert.equal(after.calls, before.calls, `${label}: 不再调用 play()`);

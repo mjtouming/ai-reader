@@ -5,6 +5,16 @@ import { formatPlaybackTime } from "../public/listeningProgress.mjs";
 
 const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const html = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+const css = fs.readFileSync(new URL("../public/style.css", import.meta.url), "utf8");
+
+assert.equal(html.includes("new MutationObserver"), false, "播放图标不能再被 MutationObserver 改写");
+assert.equal(html.includes("PAUSE_SVG"), false, "index.html 不再自行切换暂停图标");
+assert.ok(html.includes("支持 PDF、TXT、DOCX、Markdown"));
+assert.ok(html.includes('id="playerListBtn"') && html.includes("player-shelf-btn"));
+assert.equal(html.includes(".49-3.01"), false, "±10s 旧箭头缺口路径应移除");
+assert.ok(html.includes("A8.15 8.15"), "±10s 使用闭合圆弧箭头");
+assert.match(css, /\.drop-formats[^{]*\{[^}]*text-align:\s*left/);
+assert.equal(css.includes("player-shelf-corner"), false);
 
 function section(source, start, end) {
   const offset = source.indexOf(start);
@@ -18,7 +28,9 @@ function harness() {
   const actions = new Map();
   const documentListeners = new Map();
   const button = { innerText: "", textContent: "", hidden: false, classList: { toggle() {} }, setAttribute() {}, addEventListener() {} };
-  const timerElements = new Map(["timerBtn", "timerLabel", "playerTimer"].map(name => [name, { ...button }]));
+  const icon = { innerHTML: "" };
+  const mainBtn = { setAttribute() {}, addEventListener() {} };
+  const timerElements = new Map(["timerBtn", "timerLabel", "playerTimer"].map(name => [name, { ...button, hidden: false, textContent: "", classList: { toggle() {} } }]));
   const timerSelect = { value: "0", addEventListener(name, handler) { this.change = handler; } };
   const player = {
     src: "test:first", paused: true, ended: false, currentTime: 0, playCalls: 0,
@@ -45,14 +57,18 @@ function harness() {
     document: {
       visibilityState: "visible",
       hidden: false,
-      getElementById(name) { return timerElements.get(name) || button; },
+      getElementById(name) {
+        if (name === "mainPlayIcon") return icon;
+        if (name === "mainPlayBtn") return mainBtn;
+        return timerElements.get(name) || button;
+      },
       addEventListener(name, handler) {
         const previous = documentListeners.get(name);
         documentListeners.set(name, () => { previous?.(); handler(); });
       }
     },
     audio: player, audioPlayer: player,
-    mainPlayIcon: { innerHTML: "" }, PLAY_SVG: "play", PAUSE_SVG: "pause",
+    mainPlayIcon: icon, PLAY_SVG: "play", PAUSE_SVG: "pause",
     setTimeout(handler) { handler(); },
     setInterval(handler, milliseconds) { assert.equal(milliseconds, 1000); context.tick = handler; },
     Date: { now() { return context.now; } }, now: 100000,
@@ -79,10 +95,9 @@ function harness() {
     section(app, "function interruptPlayback(", "// 同一段只发一个 /tts"),
     section(app, "async function playChunk(", "// 从正在播的段往后补窗口"),
     section(app, 'const playPauseBtn = document.getElementById("playPauseBtn");', "// ── Session restore"),
-    section(app, "function renderSleepTimer()", '\ndocument.getElementById("uploadBtn")'),
-    section(html, "document.addEventListener('visibilitychange'", "  })();")
+    section(app, "function renderSleepTimer()", '\ndocument.getElementById("uploadBtn")')
   ].join("\n"), context);
-  return { context, player, button, actions, documentListeners, timerElements, timerSelect };
+  return { context, player, button, actions, documentListeners, timerElements, timerSelect, icon };
 }
 
 {
@@ -260,7 +275,7 @@ for (const resumeBeforeReady of [false, true]) {
 }
 
 for (const state of ["playing", "paused", "generating", "hidden"]) {
-  const { context, player, actions, timerSelect, timerElements, documentListeners } = harness();
+  const { context, player, button, icon, actions, timerSelect, timerElements, documentListeners } = harness();
   if (state === "playing") await actions.get("play")();
   if (state === "generating") player.src = "";
   player.currentTime = 192;
@@ -288,6 +303,10 @@ for (const state of ["playing", "paused", "generating", "hidden"]) {
   assert.equal(context.sleepMode, null);
   assert.equal(timerSelect.value, "0");
   assert.equal(context.status, "定时关闭", "原生 pause 不覆盖定时关闭文案");
+  assert.equal(button.innerText, "继续收听", `${state}: 定时关闭后按钮是继续收听`);
+  assert.match(icon.innerHTML, /polygon/, `${state}: 定时关闭后主图标是播放三角`);
+  assert.doesNotMatch(icon.innerHTML, /<rect/, `${state}: 定时关闭后不能留下暂停条`);
+  assert.equal(context.navigator.mediaSession.playbackState, "paused", `${state}: Media Session 与停止对齐`);
   context.document.hidden = false;
   documentListeners.get("visibilitychange")();
   assert.equal(timerElements.get("timerLabel").textContent, "定时");
@@ -348,6 +367,30 @@ for (const trigger of ["timeupdate", "visibilitychange"]) {
   await pending;
   assert.equal(player.playCalls, 0, "定时关闭后迟到的生成结果不能起播");
   assert.equal(context.status, "定时关闭");
+}
+
+{
+  const { context, player, button, icon, actions, timerSelect } = harness();
+  await actions.get("play")();
+  assert.match(icon.innerHTML, /<rect/, "播放中主图标是暂停条");
+  assert.equal(button.innerText, "暂停");
+  const originalPause = player.pause.bind(player);
+  player.pause = () => {
+    originalPause();
+    actions.get("play")();
+  };
+  timerSelect.value = "600";
+  timerSelect.change();
+  context.now += 600000;
+  context.tick();
+  await Promise.resolve();
+  assert.equal(context.isAutoPlaying, false, "定时关闭时同步重入的 play 不得恢复连播");
+  assert.equal(player.paused, true);
+  assert.equal(player.playCalls, 1, "重入 play 不得再次调用 audio.play()");
+  assert.equal(button.innerText, "继续收听");
+  assert.match(icon.innerHTML, /polygon/);
+  assert.equal(context.status, "定时关闭");
+  assert.equal(context.navigator.mediaSession.playbackState, "paused");
 }
 
 console.log("mediasession_node: playback races + sleep interval, countdown, visibility, reset and late generation ok");
