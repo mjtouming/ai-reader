@@ -11,6 +11,8 @@ export const CHUNK_LADDER = [150, 240, 380, 600, 960, 1500, 2200];
 export const CHUNK_ABS_MAX = 2200;
 export const CHUNK_GROWTH = 1.6;
 const TINY_PARAGRAPH = 40;
+export const STORY_WHOLE_MAX = 2000;
+export const STORY_TAIL_MIN = 100;
 
 export function maxCharsForChunk(index, prevLen, prevBudget) {
   const ladder = CHUNK_LADDER[Math.min(Math.max(index, 0), CHUNK_LADDER.length - 1)];
@@ -126,6 +128,40 @@ export function buildReadingChunks(text) {
     if (t) chunks.push(t);
   }
   return chunks;
+}
+
+// 只给故事模式用：末段太短就并进上一段，避免模型拿点评把结尾撑开。
+export function mergeStoryTail(chunks, minChars = STORY_TAIL_MIN) {
+  const list = Array.isArray(chunks)
+    ? chunks.filter(chunk => typeof chunk === "string" && chunk.trim())
+    : [];
+  if (list.length < 2) return list.slice();
+  const last = list[list.length - 1];
+  if (last.length >= minChars) return list.slice();
+  const copy = list.slice();
+  const prev = copy[copy.length - 2];
+  copy.splice(copy.length - 2, 2, `${prev}\n\n${last}`);
+  return copy;
+}
+
+export function needsStoryWholeRewrite(text, mode) {
+  const raw = String(text || "").trim();
+  return mode === "story" && raw.length > 0 && raw.length <= STORY_WHOLE_MAX;
+}
+
+// 短故事先整篇改写再切给 TTS。返回的 sourceChunks 始终是原文分段，供书架保存。
+export function planPlaybackChunks(text, mode, rewritten) {
+  const raw = String(text || "").trim();
+  const sourceChunks = buildReadingChunks(raw);
+  if (mode === "story" && raw.length > STORY_WHOLE_MAX) {
+    return { chunks: mergeStoryTail(sourceChunks), sourceChunks, script: false };
+  }
+  const spoken = String(rewritten || "").trim();
+  if (mode === "story" && spoken && raw.length <= STORY_WHOLE_MAX) {
+    const split = mergeStoryTail(buildReadingChunks(spoken));
+    return { chunks: split.length ? split : [spoken], sourceChunks, script: true };
+  }
+  return { chunks: sourceChunks.slice(), sourceChunks, script: false };
 }
 
 // ── 旧分段（20261016 及以前）：前 3 段最多 300 字，其后 2200/800 ──

@@ -1,10 +1,12 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261031-2';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-2';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261031-2';
-import { cleanBookText } from './bookCleaner.mjs?v=20261031-2';
-import { createTextDraft } from './textInputDraft.mjs?v=20261031-2';
-import { markdownToText } from './markdownText.mjs?v=20261031-2';
-import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-2';
+import { generateAudioFromText } from './audioEngine.js?v=20261031-3';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-3';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable, mergeStoryTail, planPlaybackChunks, needsStoryWholeRewrite } from './readingChunks.mjs?v=20261031-3';
+import { deriveDisplayTitle, fileNameApplies, shelfNames } from './bookTitle.mjs?v=20261031-3';
+import { textLikelyNeedsTranslation } from './classicalDetect.mjs?v=20261031-3';
+import { cleanBookText } from './bookCleaner.mjs?v=20261031-3';
+import { createTextDraft } from './textInputDraft.mjs?v=20261031-3';
+import { markdownToText } from './markdownText.mjs?v=20261031-3';
+import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-3';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -115,9 +117,46 @@ modeSelect.addEventListener("change", () => {
   } finally {
     applyingLinkedVoice = false;
   }
-  // 模式变了，旧改写稿不能再当 previous。
+  // 模式变了，旧改写稿不能再当 previous。短故事改走全文改写，长故事只把过短的末段并进去。
+  const textNow = readTextInput().trim();
+  const playing = chunks.length > 0 && audioPlayer && (audioPlayer.src || isAutoPlaying);
+  if (modeSelect.value !== "story") {
+    restoreSourceChunksIfNeeded();
+    restartPlaybackIfActive("切换模式，重新生成第", { clearRewrites: true });
+    return;
+  }
+  if (playing && needsStoryWholeRewrite(textNow, "story")) {
+    startGeneratedPlayback().catch(error => {
+      if (error?.name === "AbortError") return;
+      console.error(error);
+      setStatus("生成/播放失败 ❌", "bad", { busy: false });
+      isAutoPlaying = false;
+      syncPlaybackState();
+    });
+    return;
+  }
+  if (!chunksAreStoryScript && sourceChunks.length) {
+    chunks = mergeStoryTail(sourceChunks);
+    rewrittenChunks = [];
+    contextReady = [];
+    currentIndex = Math.min(currentIndex, Math.max(0, chunks.length - 1));
+    renderChunkNav();
+  }
   restartPlaybackIfActive("切换模式，重新生成第", { clearRewrites: true });
 });
+
+function restoreSourceChunksIfNeeded() {
+  if (!chunksAreStoryScript) return;
+  const next = sourceChunks.length ? sourceChunks.slice() : buildReadingChunks(readTextInput().trim());
+  chunksAreStoryScript = false;
+  chunks = next;
+  sourceChunks = next.slice();
+  rewrittenChunks = [];
+  contextReady = [];
+  currentIndex = Math.min(currentIndex, Math.max(0, next.length - 1));
+  maxReachedIndex = Math.min(Math.max(maxReachedIndex, -1), next.length - 1);
+  renderChunkNav();
+}
 
 // ── State ─────────────────────────────────────────────────────
 let chunks           = [];
@@ -137,6 +176,9 @@ let currentAbort     = null;
 let currentJobId     = 0;
 let currentAudioUrl  = null;
 let currentFileName  = null;
+let currentFileNameText = null; // 文件名绑定的正文；对不上就不用这个文件名
+let sourceChunks = [];           // 原文分段。故事整篇改写时，播放分段是改写稿
+let chunksAreStoryScript = false;
 let activeGenIndex   = -1;  // 正在等待生成的段（B2 阶段推送过滤用）
 let audioCache       = {};   // index → url（只放已经生成好、还没拿去播的）
 let inflight         = new Map(); // index → { token, jobId, promise, epoch } 同一段只有一个在途请求
@@ -170,6 +212,7 @@ function sameBookText(a, b) {
 // 书架/会话写 IndexedDB 时只附一个短指针。原文记录单独放在 texts store。
 function textRecord(text, chunkList, fileName, explicitRef) {
   const rec = { text, chunks: chunkList, fileName: fileName || null };
+  if (chunksAreStoryScript && chunks.length) rec.storyScript = chunks.slice();
   const ref = explicitRef || (
     currentFrontMatter && sameBookText(text, currentFrontMatter.cleaned)
       ? currentFrontMatter.refId
@@ -207,10 +250,10 @@ function saveSession() {
     localStorage.setItem(SESSION_KEY, JSON.stringify(data));
 
     // 全文有变化才写 IndexedDB，避免每 2 秒全量重复写
-    const sig = refId + ":" + text.length + ":" + chunks.length;
+    const sig = textSig(refId, text);
     if (refId && sig !== lastSavedTextSig) {
       lastSavedTextSig = sig;
-      saveTextRecord(refId, textRecord(text, chunks, currentFileName)).catch(e => {
+      saveTextRecord(refId, textRecord(text, chunksToStore().slice(), currentFileName)).catch(e => {
         console.log("saveTextRecord error:", e);
         if (!storageWarnShown) {
           storageWarnShown = true;
@@ -259,14 +302,37 @@ function currentRefId(text) {
   return hashText(text);
 }
 
+function titleContext(text) {
+  return {
+    fileName: currentFileName,
+    fileNameText: currentFileNameText,
+    text: text == null ? readTextInput() : text,
+    frontMatter: currentFrontMatter
+  };
+}
+
 function deriveTitle() {
-  if (currentFileName) return currentFileName;
+  return deriveDisplayTitle(titleContext());
+}
+
+function bindDerivedNameIfNeeded() {
   const text = readTextInput().trim();
-  if (text.length > 0) {
-    return text.slice(0, 10).replace(/\s+/g, "") + (text.length > 10 ? "…" : "");
-  }
-  const today = new Date().toISOString().slice(0, 10);
-  return `未命名书籍 ${today}`;
+  if (!text) return;
+  if (fileNameApplies(currentFileName, currentFileNameText, text, currentFrontMatter)) return;
+  const title = deriveTitle();
+  currentFileName = title;
+  currentFileNameText = text;
+}
+
+function chunksToStore() {
+  if (chunksAreStoryScript && sourceChunks.length) return sourceChunks;
+  return chunks;
+}
+
+function textSig(id, text) {
+  const stored = chunksToStore();
+  const scriptLen = chunksAreStoryScript ? chunks.length : 0;
+  return id + ":" + String(text || "").length + ":" + stored.length + ":" + scriptLen;
 }
 
 async function saveToShelf() {
@@ -289,10 +355,15 @@ async function saveToShelf() {
 
   // 书籍 id 保持稳定：已存在的书沿用原 id（含 v1 迁移来的旧 id）
   const id = existing ? existing.id : newId;
+  const names = shelfNames(titleContext(text));
+  if (!fileNameApplies(currentFileName, currentFileNameText, text, currentFrontMatter)) {
+    currentFileName = names.title;
+    currentFileNameText = text;
+  }
   const book = {
     id,
-    title:       deriveTitle(),
-    fileName:    currentFileName || null,
+    title:       names.title,
+    fileName:    names.fileName,
     textLength:  text.length,
     totalChunks: chunks.length,
     currentIndex,
@@ -308,8 +379,8 @@ async function saveToShelf() {
 
   // 全文写 IndexedDB（书架 localStorage 只存上面的元数据）
   try {
-    await saveTextRecord(id, textRecord(text, chunks, currentFileName || null));
-    lastSavedTextSig = id + ":" + text.length + ":" + chunks.length;
+    await saveTextRecord(id, textRecord(text, chunksToStore().slice(), names.fileName));
+    lastSavedTextSig = textSig(id, text);
   } catch (e) {
     console.log("saveTextRecord error:", e);
     if (!storageWarnShown) {
@@ -361,6 +432,7 @@ async function loadBook(book) {
 
   writeTextInput(text);
   currentFileName   = rec?.fileName || book.fileName || null;
+  currentFileNameText = currentFileName ? text : null;
   modeSelect.value  = (book.mode === "translate" ? "original" : book.mode) || "original";
   voiceSelect.value = book.voice || "young_female";
   speedSelect.value = book.speed || "1";
@@ -369,24 +441,27 @@ async function loadBook(book) {
   // 没有分段（v1 迁移来的书）才用旧算法重建，不用新的渐进规则重切。
   const savedChunks = Array.isArray(rec?.chunks) ? rec.chunks : null;
   const reused = savedChunksUsable(savedChunks);
-  chunks = resolvePlaybackChunks(text, reused ? savedChunks : null);
+  sourceChunks = resolvePlaybackChunks(text, reused ? savedChunks : null);
+  const useScript = reused && book.mode === "story" && savedChunksUsable(rec?.storyScript);
+  chunks = useScript ? rec.storyScript.slice() : sourceChunks.slice();
+  chunksAreStoryScript = useScript;
   await rememberFrontMatter(rec, text);
   if (!reused && chunks.length) {
-    saveTextRecord(book.id, textRecord(text, chunks, currentFileName, rec?.frontMatterRef)).catch(e => {
+    saveTextRecord(book.id, textRecord(text, sourceChunks.slice(), currentFileName, rec?.frontMatterRef)).catch(e => {
       console.log("saveTextRecord error:", e);
     });
   }
 
-  rewrittenChunks = [];
-  contextReady    = [];
+  rewrittenChunks = useScript ? chunks.slice() : [];
+  contextReady    = useScript ? chunks.map(() => true) : [];
   currentIndex    = Math.min(book.currentIndex || 0, Math.max(0, chunks.length - 1));
-  maxReachedIndex = book.maxReachedIndex ?? currentIndex;
+  maxReachedIndex = Math.min(book.maxReachedIndex ?? currentIndex, Math.max(0, chunks.length - 1));
   restoreTime     = book.currentTime || 0;
   restoreDuration = book.duration || 0;
   currentBookId   = book.id;
   currentBookText = text;
   // IDB 里已有该书全文，标记指纹避免 saveSession 立刻重复写
-  lastSavedTextSig = book.id + ":" + text.length + ":" + chunks.length;
+  lastSavedTextSig = textSig(book.id, text);
 
   saveSession();
   renderChunkNav();
@@ -493,6 +568,9 @@ function clearForNewBook() {
   currentBookId   = null;
   currentBookText = null;
   currentFileName = null;
+  currentFileNameText = null;
+  sourceChunks = [];
+  chunksAreStoryScript = false;
   currentFrontMatter = null;
   chunksFromCleaned = false;
   hideFrontMatterBar();
@@ -699,6 +777,7 @@ async function acceptBookFile(rawText, source, extra = {}) {
   }
 
   writeTextInput(result.text || "");
+  if (currentFileName) currentFileNameText = result.text || "";
   currentFrontMatter = null;
   chunksFromCleaned = false;
   hideFrontMatterBar();
@@ -734,6 +813,7 @@ async function restoreFrontMatterText() {
     chunksFromCleaned || sameBookText(currentBookText, cleaned)
   );
   writeTextInput(original);
+  if (currentFileName) currentFileNameText = original;
   currentFrontMatter = null;
   chunksFromCleaned = false;
   hideFrontMatterBar();
@@ -744,16 +824,26 @@ async function restoreFrontMatterText() {
     return;
   }
 
+  const mode = modeSelect?.value || "original";
+  const replacingCleaned = currentBookId && sameBookText(currentBookText, cleaned);
+  if (replacingCleaned) currentBookText = String(original || "").trim();
+  if (needsStoryWholeRewrite(original, mode)) {
+    await startGeneratedPlayback();
+    return;
+  }
+
   interruptPlayback("已恢复原文，重新分段生成…");
   const controlId = playbackControlId;
-  chunks = buildReadingChunks(original);
+  const plan = planPlaybackChunks(original, mode);
+  sourceChunks = plan.sourceChunks;
+  chunks = plan.chunks;
+  chunksAreStoryScript = false;
   currentIndex = 0;
   maxReachedIndex = -1;
   rewrittenChunks = [];
   contextReady = [];
 
-  if (currentBookId && sameBookText(currentBookText, cleaned)) {
-    currentBookText = original;
+  if (replacingCleaned) {
     const shelf = loadShelf();
     const book = shelf.books.find(item => item.id === currentBookId);
     if (book) {
@@ -771,7 +861,7 @@ async function restoreFrontMatterText() {
         chunks,
         fileName: currentFileName || null
       });
-      lastSavedTextSig = currentBookId + ":" + original.length + ":" + chunks.length;
+      lastSavedTextSig = textSig(currentBookId, original);
     } catch (error) {
       console.log("saveTextRecord error:", error);
     }
@@ -826,26 +916,6 @@ document.getElementById("frontMatterRestore")?.addEventListener("click", () => {
     setStatus("恢复原文失败 ❌", "bad", { busy: false });
   });
 });
-
-// 粗判文本是否需要"先翻译"（外语 或 文言文）——只看开头一小段，纯本地正则，不调用任何接口
-function textLikelyNeedsTranslation(text) {
-  if (!text) return false;
-  const sample = String(text).slice(0, 200);
-  const meaningfulChars = sample.replace(/[\s\d\p{P}]/gu, "");
-  if (!meaningfulChars) return false;
-
-  const cjkCount = (sample.match(/[一-龥]/g) || []).length;
-  const cjkRatio = cjkCount / meaningfulChars.length;
-
-  // 中文字符占比不够高 → 当外语处理，需要翻译
-  if (cjkRatio < 0.6) return true;
-
-  // 中文为主，但可能是文言文：典型文言虚词出现次数达到阈值
-  const classicalMarkers = sample.match(/[之乎者也矣焉哉兮曰]/g) || [];
-  if (classicalMarkers.length >= 2) return true;
-
-  return false;
-}
 
 // ── TTS 阶段事件（服务端 WS 推送，B2）──
 // 只显示"当前正在等待的段"的阶段；预生成段的阶段事件被过滤，避免覆盖播放状态
@@ -985,6 +1055,9 @@ async function runChunkRequest(index, jobId, epoch, token, opts) {
       if (!foreground) fillWindow(currentIndex, jobId);
     };
 
+    const nextPreview = mode === "story" && index + 1 < chunks.length
+      ? String(chunks[index + 1] || "").slice(0, 100)
+      : "";
     const result = await generateAudioFromText(
       textToSend,
       mode,
@@ -994,7 +1067,8 @@ async function runChunkRequest(index, jobId, epoch, token, opts) {
       index + 1,
       chunks.length,
       skipRewrite,
-      notifyContext
+      notifyContext,
+      { nextPreview }
     );
 
     if (jobId !== currentJobId || epoch !== playbackEpoch || signal.aborted) {
@@ -1097,7 +1171,7 @@ async function playChunk(index, jobId) {
   maxReachedIndex = Math.max(maxReachedIndex, index);
   renderChunkNav();
 
-  updateNowPlayingTitle(currentFileName || (currentBookId && (() => { const s = loadShelf(); const b = s.books.find(x => x.id === currentBookId); return b?.title; })()) || deriveTitle());
+  updateNowPlayingTitle(deriveTitle());
   setStatus(`播放第 ${index + 1}/${total} 段`, "ok", {
     busy: false,
     step: index + 1,
@@ -1217,7 +1291,30 @@ fileInput?.addEventListener("change", async function () {
 });
 
 // ── Generate ──────────────────────────────────────────────────
-generateBtn?.addEventListener("click", async function () {
+async function rewriteStoryWhole(text, signal) {
+  const response = await fetch("/rewrite-story", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+    signal
+  });
+  let data = {};
+  try { data = await response.json(); } catch {}
+  if (!response.ok) throw new Error(data.error || "全文改写失败");
+  const rewritten = String(data.text || "").trim();
+  if (!rewritten) throw new Error("全文改写结果为空");
+  return rewritten;
+}
+
+function applyPlaybackPlan(plan) {
+  sourceChunks = plan.sourceChunks;
+  chunks = plan.chunks;
+  chunksAreStoryScript = !!plan.script;
+  rewrittenChunks = plan.script ? chunks.slice() : [];
+  contextReady = plan.script ? chunks.map(() => true) : [];
+}
+
+async function startGeneratedPlayback() {
   noteUserInput();
   let text = readTextInput().trim();
   if (!text) {
@@ -1266,6 +1363,14 @@ generateBtn?.addEventListener("click", async function () {
     }
     writeTextInput(ytData.text || "");
     text = readTextInput();
+    const ytTitle = String(ytData.title || "").trim();
+    if (ytTitle) {
+      currentFileName = ytTitle;
+      currentFileNameText = text;
+    } else {
+      currentFileName = null;
+      currentFileNameText = null;
+    }
     modeSelect.value  = "original";
     setStatus("字幕已提取，准备生成...", "info");
   }
@@ -1276,6 +1381,7 @@ generateBtn?.addEventListener("click", async function () {
     chunksFromCleaned = false;
     hideFrontMatterBar();
   }
+  bindDerivedNameIfNeeded();
 
   // 1) 打断上一轮
   interruptPlayback("已打断，按当前设置重新生成…");
@@ -1283,34 +1389,52 @@ generateBtn?.addEventListener("click", async function () {
   // 2) 新任务 id
   currentJobId += 1;
   const jobId = currentJobId;
-
-  // 段长逐段放大（约 150 起，1.6 倍封顶，最长 2200），让播放盖住下一段生成。
-  chunks = buildReadingChunks(text);
-  updateNowPlayingTitle(deriveTitle());
-  chunksFromCleaned = !!(currentFrontMatter && sameBookText(text, currentFrontMatter.cleaned));
-
-  currentIndex    = 0;
-  maxReachedIndex = -1;
-  rewrittenChunks = [];
-  contextReady    = [];
-
   const controlId = playbackControlId;
-  isAutoPlaying = true;
-  syncPlaybackState();
-  await saveToShelf();
-  saveSession();
+  const signal = preGenerateAbort.signal;
+  const mode = modeSelect?.value || "original";
+  const wholeStory = needsStoryWholeRewrite(text, mode);
+
+  chunksFromCleaned = !!(currentFrontMatter && sameBookText(text, currentFrontMatter.cleaned));
+  currentIndex = 0;
+  maxReachedIndex = -1;
+  // 短故事先按原文把卡片撑起来，改写完成后再换成朗读分段。
+  applyPlaybackPlan(planPlaybackChunks(text, wholeStory ? "original" : mode));
+  updateNowPlayingTitle(deriveTitle());
   renderChunkNav();
 
-  if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
-
-  if (chunks.length === 0) {
-    alert("没有可朗读内容");
-    isAutoPlaying = false;
-    syncPlaybackState();
-    return;
-  }
+  isAutoPlaying = true;
+  syncPlaybackState();
 
   try {
+    if (wholeStory) {
+      setStatus("AI 改写中…", "info", {
+        busy: true,
+        loading: true,
+        step: 1,
+        total: Math.max(chunks.length, 1)
+      });
+      const rewritten = await rewriteStoryWhole(text, signal);
+      if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
+      applyPlaybackPlan(planPlaybackChunks(text, "story", rewritten));
+      currentIndex = 0;
+      maxReachedIndex = -1;
+      updateNowPlayingTitle(deriveTitle());
+      renderChunkNav();
+    }
+
+    await saveToShelf();
+    saveSession();
+    renderChunkNav();
+
+    if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
+
+    if (chunks.length === 0) {
+      alert("没有可朗读内容");
+      isAutoPlaying = false;
+      syncPlaybackState();
+      return;
+    }
+
     await playChunk(currentIndex, jobId);
   } catch (error) {
     if (error?.name === "AbortError" || String(error?.message || "").includes("aborted")) {
@@ -1321,6 +1445,10 @@ generateBtn?.addEventListener("click", async function () {
     isAutoPlaying = false;
     syncPlaybackState();
   }
+}
+
+generateBtn?.addEventListener("click", () => {
+  startGeneratedPlayback();
 });
 
 // ── Play / Pause ──────────────────────────────────────────────
@@ -1523,26 +1651,36 @@ window.addEventListener("load", async function () {
     if (currentJobId > 0 || epochAtStart !== userInputEpoch) return;
     writeTextInput(restoredText);
     currentFileName = restoredRecord?.fileName || null;
+    currentFileNameText = currentFileName ? restoredText : null;
     // 有保存的分段就沿用。没有分段时按旧算法重建，避免新规则把旧的段索引错位。
     let rebuiltChunks = false;
     if ((!restoredChunks || restoredChunks.length === 0) && restoredText) {
       restoredChunks = resolvePlaybackChunks(restoredText, null);
       rebuiltChunks = restoredChunks.length > 0;
     }
-    chunks = restoredChunks;
-    contextReady = [];
+    sourceChunks = restoredChunks.slice();
+    const useScript = !rebuiltChunks
+      && session.mode === "story"
+      && savedChunksUsable(restoredChunks)
+      && savedChunksUsable(restoredRecord?.storyScript);
+    chunks = useScript ? restoredRecord.storyScript.slice() : restoredChunks.slice();
+    chunksAreStoryScript = useScript;
+    rewrittenChunks = useScript ? chunks.slice() : [];
+    contextReady = useScript ? chunks.map(() => true) : [];
+    if (chunks.length) {
+      currentIndex = Math.min(currentIndex, chunks.length - 1);
+      maxReachedIndex = Math.min(Math.max(maxReachedIndex, -1), chunks.length - 1);
+    }
     if (rebuiltChunks && session.refId) {
       saveTextRecord(session.refId, textRecord(
         restoredText,
         restoredChunks,
-        null,
+        currentFileName,
         restoredRecord?.frontMatterRef
       )).catch(e => console.log("saveTextRecord error:", e));
     }
     await rememberFrontMatter(restoredRecord, restoredText);
-    lastSavedTextSig = restoredText
-      ? session.refId + ":" + restoredText.length + ":" + restoredChunks.length
-      : null;
+    lastSavedTextSig = restoredText ? textSig(session.refId, restoredText) : null;
 
     // refId 即书籍 id；匹配不上时回退 shelf.currentBookId（但文本归属未知，不设 currentBookText）
     const shelf = loadShelf();
@@ -1692,16 +1830,17 @@ window.addEventListener("DOMContentLoaded", () => {
 臣亮言：先帝创业未半而中道崩殂。今天下三分，益州疲弊，此诚危急存亡之秋也。
 然侍卫之臣不懈于内，忠志之士忘身于外者，盖追先帝之殊遇，欲报之于陛下也。
 诚宜开张圣听，以光先帝遗德，恢弘志士之气，不宜妄自菲薄，引喻失义，以塞忠谏之路也。
-`;
+`.trim();
 
-    writeTextInput(defaultText.trim());
+    writeTextInput(defaultText);
     modeSelect.value  = "story";
     voiceSelect.value = "elder_male";
     currentFileName   = "出师表节选";
+    currentFileNameText = defaultText;
 
     setTimeout(async () => {
       try {
-        await generateBtn.click();
+        await startGeneratedPlayback();
       } catch (e) {
         console.log("首次自动生成失败:", e);
         setStatus("下一段生成失败 ❌（已停止）", "bad", { busy: false });
