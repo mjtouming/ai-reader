@@ -157,8 +157,8 @@ const longStory = planPlaybackChunks("甲".repeat(2001), "story");
 assert.equal(longStory.script, false);
 assert.deepEqual(longStory.chunks, mergeStoryTail(longStory.sourceChunks));
 
-assert.equal(STORY_TEMPERATURE, 0.9);
-assert.equal(selectRewriteSettings("story").temperature, 0.9);
+assert.equal(STORY_TEMPERATURE, 0.85);
+assert.equal(selectRewriteSettings("story").temperature, 0.85);
 assert.equal(selectRewriteSettings("story").roleName, "STORYTELLER");
 assert.equal(selectRewriteSettings("translate").temperature, 0.2);
 assert.equal(selectRewriteSettings("translate").roleName, "TRANSLATE");

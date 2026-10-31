@@ -5,7 +5,7 @@ export { normalizeDashesForSpeech, STORY_WHOLE_MAX };
 
 // 改写缓存以前只有「正文|模式」。提示词变了就要换前缀，避免命中旧的故事稿。
 export const REWRITE_PROMPT_VERSION = "20261031-4";
-export const STORY_TEMPERATURE = 0.9;
+export const STORY_TEMPERATURE = 0.85;
 
 export function rewriteKeyMaterial(text, mode, variant = "") {
   const version = variant
