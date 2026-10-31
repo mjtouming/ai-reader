@@ -12,7 +12,7 @@ assert.equal(html.includes("PAUSE_SVG"), false, "index.html 不再自行切换�
 assert.ok(html.includes("支持 PDF、TXT、DOCX、Markdown"));
 assert.ok(html.includes('id="playerListBtn"') && html.includes("player-shelf-btn"));
 assert.equal(html.includes(".49-3.01"), false, "±10s 旧箭头缺口路径应移除");
-assert.ok(html.includes("A8.15 8.15"), "±10s 使用闭合圆弧箭头");
+assert.ok(html.includes("A8 8 0 1 1 4.6 9.4") && html.includes("A8 8 0 1 0 19.4 9.4"), "±10s 使用空心圆弧箭头");
 assert.match(css, /\.drop-formats[^{]*\{[^}]*text-align:\s*left/);
 assert.equal(css.includes("player-shelf-corner"), false);
 
