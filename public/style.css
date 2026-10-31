@@ -538,10 +538,12 @@ progress::-moz-progress-bar      { background: #000; }
 }
 
 .drop-formats {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--subtle);
-  letter-spacing: 0.5px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  letter-spacing: 0;
+  text-align: left;
 }
 
 /* drag-over state */
@@ -869,30 +871,22 @@ progress::-moz-progress-bar      { background: #000; }
 .right-icons svg { cursor: pointer; opacity: .7; transition: opacity .12s; }
 .right-icons svg:hover { opacity: 1; }
 .player-shelf-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  opacity: .7;
-  transition: opacity .12s;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
 }
-.player-shelf-btn:hover { opacity: 1; }
-
-/* controls-wrap：为书架按钮提供定位容器 */
-.controls-wrap {
-  position: relative;
-}
-
-/* 书架按钮：右侧绝对定位，垂直居中对齐控制栏 */
-.player-shelf-corner {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  opacity: .55;
-}
+.player-shelf-btn:hover { color: var(--muted); }
+.player-shelf-btn:active { opacity: .6; }
 
 /* ===== PC: phone frame ===== */
 @media (min-width: 900px) {
@@ -1053,7 +1047,7 @@ progress::-moz-progress-bar      { background: #000; }
 .new-actions > * { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 500; }
 .drop-zone { flex-direction: row; border-style: dashed; }
 .btn-generate { background: var(--surface); color: var(--text); border: 1px solid var(--line); }
-.drop-formats { text-align: center; font-family: var(--font-sans); font-size: 11px; margin-top: 9px; letter-spacing: 0; }
+.drop-formats { text-align: left; font-family: var(--font-sans); font-size: 11px; line-height: 1.4; margin-top: 9px; letter-spacing: 0; color: var(--muted); }
 .new-listening-card.drag-over { outline: 2px dashed var(--accent); outline-offset: 3px; }
 .empty-shelf { padding: 28px 20px; color: var(--muted); font-size: 14px; text-align: center; }
 .sheet-add-btn { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
@@ -1062,7 +1056,8 @@ progress::-moz-progress-bar      { background: #000; }
 .player-inner { padding: 10px 20px 16px; }
 .player-meta { gap: 10px; margin-bottom: 6px; min-height: 44px; }
 .player-art { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; min-width: 44px; min-height: 44px; border: 1px solid var(--line); background: var(--surface2); border-radius: 9px; cursor: pointer; }
-.player-text { flex: 1; min-width: 0; }
+.player-text { flex: 1; min-width: 0; overflow: hidden; }
+.player-shelf-btn { flex-shrink: 0; color: var(--text); }
 .player-book-title { display: block; max-width: none; font-family: var(--font-sans); font-size: 13.5px; font-weight: 600; }
 .player-chunk-info { display: block; font-family: var(--font-sans); font-size: 11.5px; margin-top: 3px; }
 .player-timer { flex-shrink: 0; padding: 5px 8px; color: var(--accent); background: var(--accent-soft); border-radius: 999px; font-family: var(--font-mono); font-size: 11.5px; }

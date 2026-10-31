@@ -1,10 +1,10 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261030-3';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261030-3';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261030-3';
-import { cleanBookText } from './bookCleaner.mjs?v=20261030-3';
-import { createTextDraft } from './textInputDraft.mjs?v=20261030-3';
-import { markdownToText } from './markdownText.mjs?v=20261030-3';
-import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261030-3';
+import { generateAudioFromText } from './audioEngine.js?v=20261031-1';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-1';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261031-1';
+import { cleanBookText } from './bookCleaner.mjs?v=20261031-1';
+import { createTextDraft } from './textInputDraft.mjs?v=20261031-1';
+import { markdownToText } from './markdownText.mjs?v=20261031-1';
+import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-1';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -391,8 +391,8 @@ async function loadBook(book) {
   saveSession();
   renderChunkNav();
   updateNowPlayingTitle(book.title);
-  const ppBtn = document.getElementById("playPauseBtn");
-  if (ppBtn) ppBtn.innerText = "继续收听";
+  isAutoPlaying = false;
+  syncPlaybackState();
   setStatus(
     `已切换：${book.title}（第 ${currentIndex + 1}/${chunks.length} 段）`,
     "ok",
@@ -1325,34 +1325,55 @@ generateBtn?.addEventListener("click", async function () {
 
 // ── Play / Pause ──────────────────────────────────────────────
 const playPauseBtn = document.getElementById("playPauseBtn");
+const PLAY_ICON = '<polygon points="5,3 19,12 5,21" fill="white"/>';
+const PAUSE_ICON = '<rect x="5" y="3" width="4" height="18" fill="white"/><rect x="15" y="3" width="4" height="18" fill="white"/>';
+// 暂停过程中屏蔽 Media Session / 音频事件同步重入的 play，避免定时关闭后又被拉回「暂停」。
+let suppressResume = false;
 
 function syncPlaybackState() {
+  const playing = isAutoPlaying;
   if (playPauseBtn) {
-    playPauseBtn.innerText = isAutoPlaying ? "暂停" : "继续收听";
-    playPauseBtn.classList.toggle("playing", isAutoPlaying);
+    playPauseBtn.innerText = playing ? "暂停" : "继续收听";
+    playPauseBtn.classList.toggle("playing", playing);
   }
   const mainPlayBtn = document.getElementById("mainPlayBtn");
-  if (mainPlayBtn) mainPlayBtn.setAttribute("aria-label", isAutoPlaying ? "暂停" : "继续收听");
+  if (mainPlayBtn) mainPlayBtn.setAttribute("aria-label", playing ? "暂停" : "继续收听");
+  const mainPlayIcon = document.getElementById("mainPlayIcon");
+  if (mainPlayIcon) mainPlayIcon.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
   syncListeningUI();
-  if ("mediaSession" in navigator) {
+  if ("mediaSession" in navigator && navigator.mediaSession) {
     try {
-      navigator.mediaSession.playbackState = isAutoPlaying ? "playing" : (audioPlayer.src || chunks.length ? "paused" : "none");
+      navigator.mediaSession.playbackState = playing ? "playing" : (audioPlayer?.src || chunks.length ? "paused" : "none");
     } catch {}
   }
 }
 
 function pausePlayback(reason = "已暂停") {
-  isAutoPlaying = false;
-  playbackControlId += 1;
-  activeGenIndex = -1;
-  audioPlayer.pause();
-  syncPlaybackState();
-  setStatus(typeof reason === "string" ? reason : "已暂停", "ok", { busy: false });
-  saveSession();
+  if (suppressResume) {
+    isAutoPlaying = false;
+    try { if (audioPlayer && !audioPlayer.paused) audioPlayer.pause(); } catch {}
+    return;
+  }
+  suppressResume = true;
+  try {
+    isAutoPlaying = false;
+    playbackControlId += 1;
+    activeGenIndex = -1;
+    try { audioPlayer.pause(); } catch {}
+    isAutoPlaying = false;
+    if (audioPlayer && !audioPlayer.paused && !audioPlayer.ended) {
+      try { audioPlayer.pause(); } catch {}
+    }
+    syncPlaybackState();
+    setStatus(typeof reason === "string" ? reason : "已暂停", "ok", { busy: false });
+    saveSession();
+  } finally {
+    suppressResume = false;
+  }
 }
 
 async function resumePlayback() {
-  if (isAutoPlaying) return;
+  if (suppressResume || isAutoPlaying) return;
   if (!audioPlayer.src && !chunks.length) return;
   const controlId = ++playbackControlId;
   if (currentJobId === 0) currentJobId += 1;
@@ -1365,6 +1386,11 @@ async function resumePlayback() {
     } else {
       await audioPlayer.play();
       if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
+      if (audioPlayer.paused) {
+        isAutoPlaying = false;
+        syncPlaybackState();
+        return;
+      }
       fillWindow(currentIndex, jobId);
     }
   } catch (error) {
@@ -1403,8 +1429,10 @@ audioPlayer?.addEventListener("timeupdate", function () {
 });
 
 audioPlayer?.addEventListener("play", () => {
-  if (!isAutoPlaying) {
-    audioPlayer.pause();
+  if (suppressResume || !isAutoPlaying) {
+    if (!suppressResume && audioPlayer && !audioPlayer.paused) {
+      try { audioPlayer.pause(); } catch {}
+    }
     return;
   }
   syncPlaybackState();
@@ -1596,8 +1624,12 @@ setInterval(() => {
 
 document.addEventListener("visibilitychange", () => {
   checkSleepTimer();
+  // 页面挂起时 iOS 可能停掉音频但不发 pause。回到前台时，只要不是段间续播/生成中，就跟真实暂停对齐。
+  if (!document.hidden && isAutoPlaying && audioPlayer?.paused && !audioPlayer.ended && audioPlayer.getAttribute("src") && activeGenIndex < 0) {
+    pausePlayback("已暂停");
+  }
   renderSleepTimer();
-  syncListeningUI();
+  syncPlaybackState();
 });
 
 audioPlayer?.addEventListener("loadedmetadata", syncListeningUI);

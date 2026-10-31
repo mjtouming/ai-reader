@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="icon" type="image/png" href="apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=20261030-3" />
+  <link rel="stylesheet" href="style.css?v=20261031-1" />
 </head>
 
 <body>
@@ -158,7 +158,7 @@
                 生成并播放
               </button>
             </div>
-            <div class="drop-formats">PDF · TXT · DOCX · Markdown</div>
+            <div class="drop-formats">支持 PDF、TXT、DOCX、Markdown</div>
             <input type="file" id="fileInput" accept=".txt,.docx,.pdf,.md,.markdown,text/plain,text/markdown,text/x-markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only">
             <div id="inputStatusSlot"><div id="statusText" class="status info" role="status">就绪</div></div>
           </div>
@@ -203,6 +203,16 @@
             <span id="playerChunkInfo" class="player-chunk-info">尚未开始收听</span>
           </div>
           <span id="playerTimer" class="player-timer" hidden></span>
+          <button type="button" class="player-shelf-btn" id="playerListBtn" aria-label="打开书架">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <line x1="9" y1="6" x2="20" y2="6"/>
+              <line x1="9" y1="12" x2="20" y2="12"/>
+              <line x1="9" y1="18" x2="20" y2="18"/>
+              <circle cx="4.5" cy="6" r="1.15" fill="currentColor" stroke="none"/>
+              <circle cx="4.5" cy="12" r="1.15" fill="currentColor" stroke="none"/>
+              <circle cx="4.5" cy="18" r="1.15" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
         </div>
 
         <!-- Timeline -->
@@ -222,9 +232,9 @@
               <polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>
             </svg>
           </button>
-          <button class="ctrl-btn" id="rewindBtn" title="-10s">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.01"/>
+          <button class="ctrl-btn" id="rewindBtn" title="-10s" aria-label="后退 10 秒">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M9.89 3.23L15.95 4.87A8.15 8.15 0 1 1 8.05 4.87L9.5 7.5A5.15 5.15 0 1 0 14.5 7.5Z"/>
             </svg>
             <small aria-hidden="true">10</small>
           </button>
@@ -233,9 +243,9 @@
               <polygon points="5,3 19,12 5,21" fill="white"/>
             </svg>
           </button>
-          <button class="ctrl-btn" id="forwardBtn" title="+10s">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.01"/>
+          <button class="ctrl-btn" id="forwardBtn" title="+10s" aria-label="前进 10 秒">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M15.95 4.87A8.15 8.15 0 1 1 8.05 4.87L14.11 3.23L9.5 7.5A5.15 5.15 0 1 0 14.5 7.5Z"/>
             </svg>
             <small aria-hidden="true">10</small>
           </button>
@@ -251,7 +261,7 @@
     </footer>
   </div>
 
-  <script type="module" src="./app.js?v=20261030-3"></script>
+  <script type="module" src="./app.js?v=20261031-1"></script>
   <script>
   // ── 自定义播放器控件 ──────────────────────────────────────────
   (function () {
@@ -261,7 +271,6 @@
     const timeStart      = document.getElementById('timeStart');
     const timeEnd        = document.getElementById('timeEnd');
     const mainPlayBtn    = document.getElementById('mainPlayBtn');
-    const mainPlayIcon   = document.getElementById('mainPlayIcon');
     const playPauseBtn   = document.getElementById('playPauseBtn');
     const skipBackBtn    = document.getElementById('skipBackBtn');
     const skipFwdBtn     = document.getElementById('skipFwdBtn');
@@ -280,9 +289,6 @@
       return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
     }
 
-    const PLAY_SVG  = '<polygon points="5,3 19,12 5,21" fill="white"/>';
-    const PAUSE_SVG = '<rect x="5" y="3" width="4" height="18" fill="white"/><rect x="15" y="3" width="4" height="18" fill="white"/>';
-
     // Timeline
     if (audio && timeBarBg) {
       function seekTo(clientX) {
@@ -297,22 +303,10 @@
       timeBarBg.addEventListener('touchmove',  (e) => { e.preventDefault(); seekTo(e.touches[0].clientX); }, { passive: false });
     }
 
-    // Play state icon
-    if (audio && mainPlayIcon) {
-      audio.addEventListener('play',  () => { mainPlayIcon.innerHTML = PAUSE_SVG; });
-      audio.addEventListener('pause', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
-      audio.addEventListener('ended', () => { mainPlayIcon.innerHTML = PLAY_SVG; });
-    }
-
-    // Main play button → delegate to playPauseBtn
+    // 底部主按钮只负责点击。图标和文案由 app.js syncPlaybackState() 独占，
+    // 避免 play/pause 监听和 MutationObserver 在定时关闭后把图标打回暂停。
     if (mainPlayBtn && playPauseBtn) {
       mainPlayBtn.addEventListener('click', () => playPauseBtn.click());
-    }
-
-    if (playPauseBtn) {
-      new MutationObserver(() => {
-        if (!document.hidden && mainPlayIcon) mainPlayIcon.innerHTML = playPauseBtn.textContent.includes('暂停') ? PAUSE_SVG : PLAY_SVG;
-      }).observe(playPauseBtn, { childList: true, subtree: true, characterData: true });
     }
 
     // Skip prev/next via chunkNav select
@@ -369,13 +363,10 @@
       });
     }
 
-    // 播放器里的目录按钮 → 打开书架
-    const playerShelfBtn = document.getElementById('playerShelfBtn');
-    if (playerShelfBtn) {
-      playerShelfBtn.addEventListener('click', () => {
-        document.getElementById('shelfBtn')?.click();
-      });
-    }
+    // 封面和右上角列表都打开同一书架
+    const openPlayerShelf = () => document.getElementById('shelfBtn')?.click();
+    document.getElementById('playerShelfBtn')?.addEventListener('click', openPlayerShelf);
+    document.getElementById('playerListBtn')?.addEventListener('click', openPlayerShelf);
 
     // 书架关闭按钮 → 点击 overlay 触发关闭（app.js 监听 overlay click 来关闭）
     const sheetCloseBtn = document.getElementById('sheetCloseBtn');
@@ -411,14 +402,6 @@
       }); } catch(e) {}
     }
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && audio) {
-        setTimeout(() => {
-          const ppBtn = document.getElementById('playPauseBtn');
-          if (!document.hidden && mainPlayIcon) mainPlayIcon.innerHTML = ppBtn?.textContent.includes('暂停') ? PAUSE_SVG : PLAY_SVG;
-        }, 200);
-      }
-    });
   })();
   </script>
 </body>
