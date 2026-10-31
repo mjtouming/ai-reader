@@ -1,10 +1,10 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261031-1';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-1';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261031-1';
-import { cleanBookText } from './bookCleaner.mjs?v=20261031-1';
-import { createTextDraft } from './textInputDraft.mjs?v=20261031-1';
-import { markdownToText } from './markdownText.mjs?v=20261031-1';
-import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-1';
+import { generateAudioFromText } from './audioEngine.js?v=20261031-2';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-2';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable } from './readingChunks.mjs?v=20261031-2';
+import { cleanBookText } from './bookCleaner.mjs?v=20261031-2';
+import { createTextDraft } from './textInputDraft.mjs?v=20261031-2';
+import { markdownToText } from './markdownText.mjs?v=20261031-2';
+import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-2';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");

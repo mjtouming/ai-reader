@@ -1070,7 +1070,7 @@ progress::-moz-progress-bar      { background: #000; }
 .controls-row { justify-content: space-between; gap: 0; margin-bottom: 0; }
 .ctrl-btn { min-width: 44px; min-height: 44px; color: var(--text); position: relative; }
 .ctrl-btn svg { width: 22px; height: 22px; }
-.ctrl-btn small { position: absolute; font-size: 8px; font-weight: 700; top: 18px; }
+#rewindBtn svg, #forwardBtn svg { width: 26px; height: 26px; }
 .main-play-btn { width: 58px; height: 58px; background: var(--ink); color: var(--on-ink); }
 .main-play-btn:hover { color: var(--on-ink); }
 .main-play-btn svg polygon, .main-play-btn svg rect { fill: currentColor; }
