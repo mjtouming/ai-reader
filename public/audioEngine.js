@@ -135,7 +135,7 @@ function safeAudioUrl(value) {
 // ✅ 修复2：返回 { url, rewritten } 对象，而不是直接返回字符串
 // delivery=url：改写稿在响应头里就返回，MP3 交给 <audio> 边下边播。
 // onContext 在正文下载之前调用，下一段才能在这一段还在下的时候开始合成。
-export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks, skipRewrite = false, onContext = null) {
+export async function generateAudioFromText(text, mode, voice, signal, previous, chunkIndex, totalChunks, skipRewrite = false, onContext = null, extra = null) {
 
   const key = await createCacheKey(text, mode, voice);
 
@@ -180,6 +180,7 @@ export async function generateAudioFromText(text, mode, voice, signal, previous,
           chunkIndex,
           totalChunks,
           skipRewrite,
+          nextPreview: extra?.nextPreview || "",
           requestId,
           // 空 body + X-Audio-Url，让 <audio> 自己拉 MP3，预取不必等整段下完。
           delivery: "url"
