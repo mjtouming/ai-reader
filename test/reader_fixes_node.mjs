@@ -15,7 +15,6 @@ import {
   ANNOUNCER_PROMPT,
   buildStoryUserContent,
   COMMON_RULES,
-  maxCommentsForSource,
   REWRITE_PROMPT_VERSION,
   rewriteKeyMaterial,
   selectRewriteSettings,
@@ -158,28 +157,34 @@ const longStory = planPlaybackChunks("甲".repeat(2001), "story");
 assert.equal(longStory.script, false);
 assert.deepEqual(longStory.chunks, mergeStoryTail(longStory.sourceChunks));
 
-assert.equal(STORY_TEMPERATURE, 0.75);
-assert.equal(selectRewriteSettings("story").temperature, 0.75);
+assert.equal(STORY_TEMPERATURE, 0.9);
+assert.equal(selectRewriteSettings("story").temperature, 0.9);
 assert.equal(selectRewriteSettings("story").roleName, "STORYTELLER");
 assert.equal(selectRewriteSettings("translate").temperature, 0.2);
 assert.equal(selectRewriteSettings("translate").roleName, "TRANSLATE");
 assert.equal(selectRewriteSettings("original").temperature, 0.4);
 assert.equal(selectRewriteSettings("announcer").roleName, "ANNOUNCER");
-assert.equal(REWRITE_PROMPT_VERSION, "20261031-3");
-assert.equal(rewriteKeyMaterial("木兰", "story"), "prompt-20261031-3|木兰|story");
-assert.equal(rewriteKeyMaterial("木兰", "story", "whole"), "prompt-20261031-3|whole|木兰|story");
-assert.deepEqual(storyLengthTarget(52), { min: 104, max: 156 });
-assert.equal(maxCommentsForSource(52), 0);
-assert.equal(maxCommentsForSource(430), 1);
-assert.equal(maxCommentsForSource(900), 3);
+assert.equal(REWRITE_PROMPT_VERSION, "20261031-4");
+assert.equal(rewriteKeyMaterial("木兰", "story"), "prompt-20261031-4|木兰|story");
+assert.equal(rewriteKeyMaterial("木兰", "story", "whole"), "prompt-20261031-4|whole|木兰|story");
+assert.deepEqual(storyLengthTarget(52), { min: 156, max: 260 });
+assert.deepEqual(storyLengthTarget(430), { min: 1290, max: 2150 });
 
 const bans = STORY_PROMPT.match(/禁止使用破折号[^\n]*/g) || [];
 assert.ok(bans.length >= 1);
 const withoutBan = bans.reduce((text, line) => text.replace(line, ""), STORY_PROMPT);
 assert.equal(withoutBan.includes("—"), false);
-assert.match(STORY_PROMPT, /拟声词只用原文/);
+assert.match(STORY_PROMPT, /砰。/);
+assert.match(STORY_PROMPT, /抖包袱/);
+assert.match(STORY_PROMPT, /以今说古/);
+assert.match(STORY_PROMPT, /跟听众搭话/);
+assert.match(STORY_PROMPT, /开头好玩，中间好玩，结尾一样好玩/);
+assert.match(STORY_PROMPT, /结尾不单独来一段升华总结/);
 assert.match(STORY_PROMPT, /姓氏/);
-assert.match(STORY_PROMPT, /300 到 400 字/);
+assert.match(STORY_PROMPT, /3 到 5 倍/);
+assert.equal(STORY_PROMPT.includes("300 到 400 字"), false);
+assert.equal(STORY_PROMPT.includes("拟声词只用原文"), false);
+assert.equal(STORY_PROMPT.includes("宁可不点评"), false);
 assert.match(COMMON_RULES, /一作/);
 assert.match(ANNOUNCER_PROMPT, /只直译/);
 assert.match(ANNOUNCER_PROMPT, /乐府诗集/);
@@ -192,9 +197,10 @@ const tailPrompt = buildStoryUserContent({
   whole: false
 });
 assert.match(tailPrompt, /原文 52 字/);
-assert.match(tailPrompt, /104/);
-assert.match(tailPrompt, /156/);
-assert.match(tailPrompt, /最多 0 处/);
+assert.match(tailPrompt, /156 到 260 字/);
+assert.match(tailPrompt, /3 到 5 倍/);
+assert.equal(tailPrompt.includes("最多 0 处"), false);
+assert.equal(/最多 \d+ 处/.test(tailPrompt), false);
 assert.match(tailPrompt, /总结升华/);
 assert.match(tailPrompt, /他一抬头，哟。/);
 assert.equal(tailPrompt.includes("—"), false);
@@ -222,17 +228,19 @@ const wholePrompt = buildStoryUserContent({
 });
 assert.match(wholePrompt, /一次讲完/);
 assert.match(wholePrompt, /原文 430 字/);
-assert.match(wholePrompt, /最多 1 处/);
+assert.match(wholePrompt, /1290 到 2150 字/);
+assert.match(wholePrompt, /总结升华/);
+assert.equal(/最多 \d+ 处/.test(wholePrompt), false);
 assert.equal(wholePrompt.includes("不应出现"), false);
 
 assert.match(app, /currentFileName\s*=\s*"出师表节选";\s*currentFileNameText = defaultText;/);
 assert.match(app, /isOriginalFirstChunk && !textLikelyNeedsTranslation\(textToSend\)/);
 assert.match(app, /rewriteStoryWhole/);
-assert.match(html, /app\.js\?v=20261031-3/);
-assert.match(html, /style\.css\?v=20261031-3/);
+assert.match(html, /app\.js\?v=20261031-4/);
+assert.match(html, /style\.css\?v=20261031-4/);
 assert.match(html, /title:\s*'灵听'/);
-assert.equal(html.includes("20261031-2"), false);
-assert.equal(app.includes("20261031-2"), false);
+assert.equal(html.includes("20261031-3"), false);
+assert.equal(app.includes("20261031-3"), false);
 assert.match(server, /"--sub-langs", "en"/);
 assert.match(server, /"--print", "%\(title\)s"/);
 assert.match(server, /rewriteKeyMaterial/);

@@ -1,12 +1,12 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261031-3';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-3';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable, mergeStoryTail, planPlaybackChunks, needsStoryWholeRewrite } from './readingChunks.mjs?v=20261031-3';
-import { deriveDisplayTitle, fileNameApplies, shelfNames } from './bookTitle.mjs?v=20261031-3';
-import { textLikelyNeedsTranslation } from './classicalDetect.mjs?v=20261031-3';
-import { cleanBookText } from './bookCleaner.mjs?v=20261031-3';
-import { createTextDraft } from './textInputDraft.mjs?v=20261031-3';
-import { markdownToText } from './markdownText.mjs?v=20261031-3';
-import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-3';
+import { generateAudioFromText } from './audioEngine.js?v=20261031-4';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-4';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable, mergeStoryTail, planPlaybackChunks, needsStoryWholeRewrite } from './readingChunks.mjs?v=20261031-4';
+import { deriveDisplayTitle, fileNameApplies, shelfNames } from './bookTitle.mjs?v=20261031-4';
+import { textLikelyNeedsTranslation } from './classicalDetect.mjs?v=20261031-4';
+import { cleanBookText } from './bookCleaner.mjs?v=20261031-4';
+import { createTextDraft } from './textInputDraft.mjs?v=20261031-4';
+import { markdownToText } from './markdownText.mjs?v=20261031-4';
+import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-4';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");

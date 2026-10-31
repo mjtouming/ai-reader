@@ -45,9 +45,9 @@ const accepted = html.match(/id="fileInput" accept="([^"]+)"/)[1].split(",");
 for (const type of [".txt", ".docx", ".pdf", ".md", ".markdown", "text/plain", "text/markdown", "text/x-markdown", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]) {
   assert.ok(accepted.includes(type), `accept 缺少 ${type}`);
 }
-assert.ok(html.includes("style.css?v=20261031-3") && html.includes("app.js?v=20261031-3"));
+assert.ok(html.includes("style.css?v=20261031-4") && html.includes("app.js?v=20261031-4"));
 for (const match of app.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)) {
-  assert.ok(match[1].endsWith("?v=20261031-3"), `import 版本未同步: ${match[1]}`);
+  assert.ok(match[1].endsWith("?v=20261031-4"), `import 版本未同步: ${match[1]}`);
 }
 
 for (const extension of ["md", "MD", "markdown", "MaRkDoWn", "txt", "TXT", "pdf", "PDF", "docx", "DOCX"]) {
