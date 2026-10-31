@@ -74,7 +74,7 @@ function harness() {
     Date: { now() { return context.now; } }, now: 100000,
     chunks: ["first", "second"], currentIndex: 0, currentJobId: 1,
     isAutoPlaying: false, playbackControlId: 0, playbackEpoch: 0,
-    audioCache: {}, currentAudioUrl: null, activeGenIndex: -1,
+    audioCache: {}, currentAudioUrl: null, activeGenIndex: -1, generatingSegmentIndices: new Set(),
     currentAbort: null, preGenerateAbort: new AbortController(), AbortController,
     inflight: new Map(), contextReady: [], restoreTime: 0, maxReachedIndex: -1,
     restoreDuration: 0, audioChunkIndex: 0,
