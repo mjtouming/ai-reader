@@ -453,12 +453,25 @@ body {
 .status.loading { color: var(--muted); }
 
 /* Loading animation */
-@keyframes spin    { to { transform: rotate(360deg); } }
-@keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.4} }
+/* 星芒：4 根穿心细线 = 8 道光芒，长短交替；转动时长短互换，像在呼吸 */
+.spark { position: relative; display: inline-block; flex-shrink: 0; width: 14px; height: 14px; }
+.spark > span { position: absolute; inset: 0; }
+.spark > span:nth-child(2) { transform: rotate(45deg); }
+.spark > span:nth-child(3) { transform: rotate(90deg); }
+.spark > span:nth-child(4) { transform: rotate(135deg); }
+.spark > span::before, .spark > span::after { content: ''; position: absolute; left: 50%; width: 2px; height: 40%; margin-left: -1px; border-radius: 2px; background: currentColor; }
+.spark > span::before { top: 0; transform-origin: 50% 100%; }
+.spark > span::after { bottom: 0; transform-origin: 50% 0; }
+.spark > span:nth-child(even)::before, .spark > span:nth-child(even)::after { transform: scaleY(.55); }
+.spark.spinning { animation: spark-breathe 2.6s cubic-bezier(.45, 0, .55, 1) infinite; }
+.spark.spinning > span:nth-child(odd)::before, .spark.spinning > span:nth-child(odd)::after { animation: spark-ray-long 2.6s cubic-bezier(.45, 0, .55, 1) infinite; }
+.spark.spinning > span:nth-child(even)::before, .spark.spinning > span:nth-child(even)::after { animation: spark-ray-short 2.6s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes spark-breathe { 0%, 100% { transform: scale(.8) rotate(0deg); opacity: .55; } 45% { transform: scale(1) rotate(22deg); opacity: 1; } }
+@keyframes spark-ray-long { 0%, 100% { transform: scaleY(.5); } 45% { transform: scaleY(1); } }
+@keyframes spark-ray-short { 0%, 100% { transform: scaleY(.35); } 45% { transform: scaleY(.6); } }
 
-.status-loading-wrap { display: inline-flex; align-items: center; gap: 6px; }
-.loading-icon { display: inline-block; animation: spin 2s linear infinite; color: var(--accent); font-size: 13px; line-height: 1; }
-.status.loading .status-text { animation: pulse 1.5s ease-in-out infinite; }
+.loading-icon { width: 13px; height: 13px; color: var(--accent); }
+.status-loading-wrap { gap: 8px; }
 
 /* Progress bar */
 progress {
@@ -955,7 +968,7 @@ progress::-moz-progress-bar      { background: #000; }
 
   /* 进度条填充、主按钮 → 用亮色 */
   .time-bar-fill          { background: var(--text); }
-  .btn-generate           { background: var(--text); color: var(--bg); }
+  .btn-generate           { background: var(--text); color: var(--bg); --generate-sheen: rgba(255,213,128,.4); }
   .main-play-btn          { background: var(--text); }
   .main-play-btn svg polygon,
   .main-play-btn svg rect { fill: var(--bg); }
@@ -1015,7 +1028,9 @@ progress::-moz-progress-bar      { background: #000; }
 .progress-summary { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 12px 0 7px; font-size: 14px; font-weight: 600; }
 #playedPercent { font-size: 12px; font-weight: 400; color: var(--muted); white-space: nowrap; }
 .segmented-progress { display: flex; gap: 3px; height: 5px; }
-.progress-segment { flex: 1; min-width: 0; background: var(--line); border-radius: 3px; overflow: hidden; }
+.progress-segment { position: relative; flex: 1; min-width: 0; background: var(--line); border-radius: 3px; overflow: hidden; }
+.progress-segment.generating::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 50%; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: .35; pointer-events: none; animation: segment-shimmer 1.4s ease-in-out infinite; }
+@keyframes segment-shimmer { from { transform: translateX(-100%); } to { transform: translateX(200%); } }
 .progress-segment > span { display: block; width: 100%; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform 250ms linear; }
 .progress-segment.done > span { opacity: .45; }
 .segmented-progress.continuous { gap: 0; }
@@ -1023,10 +1038,10 @@ progress::-moz-progress-bar      { background: #000; }
 .status.info, .status.loading { color: var(--muted); }
 .status.ok { color: var(--ok); }
 .status.bad { color: var(--bad); }
-.status-loading-wrap { align-items: baseline; }
+.status-loading-wrap { align-items: center; }
 .actions-section { padding: 0; margin-top: 12px; gap: 8px; }
 .btn-primary, .btn-outline, .btn-generate, .chunk-nav select { min-height: 44px; height: 44px; border-radius: 12px; font-family: var(--font-sans); letter-spacing: 0; }
-.btn-primary { flex: 1; min-width: 0; border: 1px solid var(--ink); background: var(--ink); color: var(--on-ink); font-size: 15px; font-weight: 600; cursor: pointer; }
+.btn-primary { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; }
 .btn-primary::before { content: '▶'; font-size: 13px; margin-right: 7px; }
 .btn-primary.playing::before { content: 'Ⅱ'; }
 .btn-outline { justify-content: center; padding: 0 10px; font-size: 13px; gap: 5px; background: var(--surface); }
@@ -1046,7 +1061,10 @@ progress::-moz-progress-bar      { background: #000; }
 .new-actions { display: flex; gap: 8px; margin-top: 10px; }
 .new-actions > * { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 500; }
 .drop-zone { flex-direction: row; border-style: dashed; }
-.btn-generate { background: var(--surface); color: var(--text); border: 1px solid var(--line); }
+.btn-generate { position: relative; overflow: hidden; background: var(--ink); color: var(--on-ink); border: 1px solid var(--ink); font-size: 15px; font-weight: 600; }
+.btn-generate.is-generating { opacity: 1; cursor: progress; }
+.btn-generate.is-generating::after { content: ''; position: absolute; top: -50%; left: 0; width: 40%; height: 200%; background: linear-gradient(90deg, transparent, var(--generate-sheen, rgba(255,255,255,.18)), transparent); pointer-events: none; animation: button-shimmer 1.8s ease-in-out infinite; }
+@keyframes button-shimmer { from { transform: translateX(-150%) skewX(-18deg); } to { transform: translateX(350%) skewX(-18deg); } }
 .drop-formats { text-align: left; font-family: var(--font-sans); font-size: 11px; line-height: 1.4; margin-top: 9px; letter-spacing: 0; color: var(--muted); }
 .new-listening-card.drag-over { outline: 2px dashed var(--accent); outline-offset: 3px; }
 .empty-shelf { padding: 28px 20px; color: var(--muted); font-size: 14px; text-align: center; }
@@ -1091,4 +1109,7 @@ button:focus-visible, .chunk-nav select:focus-visible { outline: 2px solid var(-
 }
 @media (prefers-reduced-motion: reduce) {
   .progress-segment > span, .time-bar-fill { transition: none; }
+  .btn-generate { transition: none; }
+  .btn-generate.is-generating::after, .spark.spinning, .spark.spinning > span::before, .spark.spinning > span::after, .progress-segment.generating::after { animation: none; }
+  .btn-generate.is-generating::after, .progress-segment.generating::after { opacity: 0; }
 }

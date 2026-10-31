@@ -1,12 +1,12 @@
-import { generateAudioFromText } from './audioEngine.js?v=20261031-4';
-import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-4';
-import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable, mergeStoryTail, planPlaybackChunks, needsStoryWholeRewrite } from './readingChunks.mjs?v=20261031-4';
-import { deriveDisplayTitle, fileNameApplies, shelfNames } from './bookTitle.mjs?v=20261031-4';
-import { textLikelyNeedsTranslation } from './classicalDetect.mjs?v=20261031-4';
-import { cleanBookText } from './bookCleaner.mjs?v=20261031-4';
-import { createTextDraft } from './textInputDraft.mjs?v=20261031-4';
-import { markdownToText } from './markdownText.mjs?v=20261031-4';
-import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-4';
+import { generateAudioFromText } from './audioEngine.js?v=20261031-5';
+import { hashText, migrateV1IfNeeded, saveTextRecord, loadTextRecord, deleteTextRecord } from './storage.js?v=20261031-5';
+import { buildReadingChunks, resolvePlaybackChunks, savedChunksUsable, mergeStoryTail, planPlaybackChunks, needsStoryWholeRewrite } from './readingChunks.mjs?v=20261031-5';
+import { deriveDisplayTitle, fileNameApplies, shelfNames } from './bookTitle.mjs?v=20261031-5';
+import { textLikelyNeedsTranslation } from './classicalDetect.mjs?v=20261031-5';
+import { cleanBookText } from './bookCleaner.mjs?v=20261031-5';
+import { createTextDraft } from './textInputDraft.mjs?v=20261031-5';
+import { markdownToText } from './markdownText.mjs?v=20261031-5';
+import { listeningProgress, formatPlaybackTime } from './listeningProgress.mjs?v=20261031-5';
 
 // ── DOM refs ──────────────────────────────────────────────────
 const textInput   = document.getElementById("textInput");
@@ -180,6 +180,7 @@ let currentFileNameText = null; // 文件名绑定的正文；对不上就不用
 let sourceChunks = [];           // 原文分段。故事整篇改写时，播放分段是改写稿
 let chunksAreStoryScript = false;
 let activeGenIndex   = -1;  // 正在等待生成的段（B2 阶段推送过滤用）
+const generatingSegmentIndices = new Set();
 let audioCache       = {};   // index → url（只放已经生成好、还没拿去播的）
 let inflight         = new Map(); // index → { token, jobId, promise, epoch } 同一段只有一个在途请求
 let contextReady     = [];   // 该段改写上下文已落地，下一段才允许带 previous 出发
@@ -681,6 +682,7 @@ function syncListeningUI() {
       const done = !progress.continuous && segmentIndex < currentIndex;
       const fraction = progress.continuous ? progress.ratio : done ? 1 : segmentIndex === currentIndex ? progress.fraction : 0;
       segment.classList.toggle("done", done);
+      segment.classList.toggle("generating", progress.continuous ? generatingSegmentIndices.size > 0 : generatingSegmentIndices.has(segmentIndex));
       segment.firstElementChild.style.transform = `scaleX(${fraction})`;
     }
   });
@@ -692,13 +694,16 @@ function setStatus(text, type = "info", opts = {}) {
 
   statusText.classList.remove("ok", "bad", "info", "loading");
 
-  if (opts.loading) {
+  if (opts.loading || opts.busy === true) {
     const wrap = document.createElement("span");
     wrap.className = "status-loading-wrap";
 
     const icon = document.createElement("span");
-    icon.className = "loading-icon";
-    icon.textContent = "❄";
+    icon.className = "loading-icon spark spinning";
+    icon.setAttribute("aria-hidden", "true");
+    for (let barIndex = 0; barIndex < 4; barIndex++) {
+      icon.appendChild(document.createElement("span"));
+    }
 
     const textSpan = document.createElement("span");
     textSpan.className = "status-text";
@@ -719,6 +724,11 @@ function setStatus(text, type = "info", opts = {}) {
   if (generateBtn && typeof opts.busy === "boolean") {
     // busy=true 仅在"生成中"禁用按钮；播放中必须保持可点击（粘贴新文本重新生成）
     generateBtn.disabled = opts.busy;
+    generateBtn.classList.toggle("is-generating", opts.busy);
+    generateBtn.querySelector(".spark")?.classList.toggle("spinning", opts.busy);
+    generateBtn.setAttribute("aria-busy", String(opts.busy));
+    const label = generateBtn.querySelector(".generate-label");
+    if (label) label.textContent = opts.busy ? "生成中" : "生成并播放";
   }
   syncListeningUI();
 }
@@ -967,6 +977,8 @@ function interruptPlayback(reason = "") {
   audioChunkIndex = -1;
   playbackEpoch += 1;
   activeGenIndex = -1;
+  generatingSegmentIndices.clear();
+  syncListeningUI();
 
   if (currentAbort) {
     try { currentAbort.abort(); } catch {}
@@ -1058,6 +1070,8 @@ async function runChunkRequest(index, jobId, epoch, token, opts) {
     const nextPreview = mode === "story" && index + 1 < chunks.length
       ? String(chunks[index + 1] || "").slice(0, 100)
       : "";
+    generatingSegmentIndices.add(index);
+    syncListeningUI();
     const result = await generateAudioFromText(
       textToSend,
       mode,
@@ -1086,6 +1100,10 @@ async function runChunkRequest(index, jobId, epoch, token, opts) {
   } finally {
     const cur = inflight.get(index);
     if (cur && cur.token === token) inflight.delete(index);
+    if (jobId === currentJobId && epoch === playbackEpoch) {
+      generatingSegmentIndices.delete(index);
+      syncListeningUI();
+    }
     // 前台这段要等 play() 成功后再预生成，避免和首次起播抢 Safari 的自动播放许可。
     if (ok && !foreground && jobId === currentJobId && epoch === playbackEpoch) {
       fillWindow(currentIndex, jobId);
@@ -1413,7 +1431,17 @@ async function startGeneratedPlayback() {
         step: 1,
         total: Math.max(chunks.length, 1)
       });
-      const rewritten = await rewriteStoryWhole(text, signal);
+      chunks.forEach((chunk, index) => generatingSegmentIndices.add(index));
+      syncListeningUI();
+      let rewritten;
+      try {
+        rewritten = await rewriteStoryWhole(text, signal);
+      } finally {
+        if (jobId === currentJobId && signal === preGenerateAbort.signal) {
+          generatingSegmentIndices.clear();
+          syncListeningUI();
+        }
+      }
       if (jobId !== currentJobId || controlId !== playbackControlId || !isAutoPlaying) return;
       applyPlaybackPlan(planPlaybackChunks(text, "story", rewritten));
       currentIndex = 0;
