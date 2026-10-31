@@ -4,6 +4,9 @@ import vm from "node:vm";
 import { listeningProgress, formatPlaybackTime } from "../public/listeningProgress.mjs";
 
 const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+const html = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+const buttonRays = [...html.matchAll(/<span style="--ray-index:(\d+)"><\/span>/g)];
+assert.deepEqual(buttonRays.map(match => Number(match[1])), Array.from({ length: 12 }, (_, index) => index));
 
 function section(start, end) {
   const offset = app.indexOf(start);
@@ -14,7 +17,7 @@ function section(start, end) {
 
 function element() {
   return {
-    children: [], attributes: {}, style: {}, className: "", textContent: "",
+    children: [], attributes: {}, style: { setProperty(name, value) { this[name] = String(value); } }, className: "", textContent: "",
     get classList() {
       return {
         contains: name => this.className.split(/\s+/).includes(name),
@@ -34,7 +37,7 @@ function element() {
     replaceChildren() { this.children = []; },
     setAttribute(name, value) { this.attributes[name] = value; },
     removeAttribute(name) { delete this.attributes[name]; },
-    querySelector() { return this.label; }
+    querySelector(selector) { return selector === ".spark" ? this.icon : this.label; }
   };
 }
 
@@ -54,6 +57,8 @@ function harness() {
   };
   const button = getNode("generateBtn");
   button.label = element();
+  button.icon = element();
+  button.icon.className = "spark";
   const status = getNode("statusText");
   const context = vm.createContext({
     console: { log() {}, error() {} }, DOMException, AbortController,
@@ -96,9 +101,12 @@ function harness() {
   assert.equal(button.disabled, true);
   assert.equal(button.classList.contains("is-generating"), true);
   assert.equal(button.label.textContent, "生成中");
+  assert.equal(button.icon.classList.contains("spinning"), true);
   assert.equal(button.attributes["aria-busy"], "true");
   const wrap = status.firstElementChild;
-  assert.equal(wrap.children[0].children.length, 4);
+  assert.equal(wrap.children[0].children.length, 12);
+  assert.deepEqual(wrap.children[0].children.map(ray => ray.style["--ray-index"]),
+    Array.from({ length: 12 }, (_, index) => String(index)));
   assert.equal(wrap.children[0].attributes["aria-hidden"], "true");
   assert.equal(wrap.children[1].textContent, "正在解析 PDF…");
   context.setStatus("其他提示", "info", { step: 3, total: 4 });
@@ -106,11 +114,13 @@ function harness() {
   context.setStatus("播放第 1 段", "ok", { busy: false });
   assert.equal(button.disabled, false);
   assert.equal(button.classList.contains("is-generating"), false);
+  assert.equal(button.icon.classList.contains("spinning"), false);
   assert.equal(button.label.textContent, "生成并播放");
   assert.equal(status.classList.contains("loading"), false);
   context.setStatus("单独 loading", "info", { loading: true });
-  assert.equal(status.firstElementChild.firstElementChild.children.length, 4);
+  assert.equal(status.firstElementChild.firstElementChild.children.length, 12);
   assert.equal(button.disabled, false);
+  assert.equal(button.icon.classList.contains("spinning"), false, "单独 loading 不启动空闲按钮图标");
 }
 
 {
